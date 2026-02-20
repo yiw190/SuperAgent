@@ -215,17 +215,17 @@ export function QuestionRequestItem({
 
   // Pending/submitting state - show question form
   return (
-    <div className="border rounded-md bg-blue-50 border-blue-200 text-sm">
+    <div className="border rounded-md bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm">
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
-        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-          <HelpCircle className="h-4 w-4 text-blue-600" />
+        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
+          <HelpCircle className="h-4 w-4 text-blue-600 dark:text-blue-400" />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-4">
           {/* Header */}
-          <div className="font-medium text-blue-900">
+          <div className="font-medium text-blue-900 dark:text-blue-100">
             {questions.length === 1 ? 'Question from Agent' : 'Questions from Agent'}
           </div>
 
@@ -234,10 +234,10 @@ export function QuestionRequestItem({
             <div key={questionIndex} className="space-y-2">
               {/* Question header chip and text */}
               <div className="flex items-start gap-2">
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 shrink-0">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 shrink-0">
                   {question.header}
                 </span>
-                <span className="text-blue-900">{question.question}</span>
+                <span className="text-blue-900 dark:text-blue-100">{question.question}</span>
               </div>
 
               {/* Options */}
@@ -253,8 +253,8 @@ export function QuestionRequestItem({
                       className={cn(
                         'flex items-start gap-2 p-2 rounded border cursor-pointer transition-colors',
                         isSelected
-                          ? 'bg-blue-100 border-blue-300'
-                          : 'bg-white border-blue-200 hover:bg-blue-50'
+                          ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-600'
+                          : 'bg-white dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/50'
                       )}
                     >
                       <input
@@ -266,9 +266,9 @@ export function QuestionRequestItem({
                         className="mt-0.5"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-blue-900">{option.label}</div>
+                        <div className="font-medium text-blue-900 dark:text-blue-100">{option.label}</div>
                         {option.description && (
-                          <div className="text-xs text-blue-700">{option.description}</div>
+                          <div className="text-xs text-blue-700 dark:text-blue-300">{option.description}</div>
                         )}
                       </div>
                     </label>
@@ -280,8 +280,8 @@ export function QuestionRequestItem({
                   className={cn(
                     'flex items-start gap-2 p-2 rounded border cursor-pointer transition-colors',
                     otherSelected[questionIndex]
-                      ? 'bg-blue-100 border-blue-300'
-                      : 'bg-white border-blue-200 hover:bg-blue-50'
+                      ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-600'
+                      : 'bg-white dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/50'
                   )}
                 >
                   <input
@@ -293,7 +293,7 @@ export function QuestionRequestItem({
                     className="mt-0.5"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-blue-900">Other</div>
+                    <div className="font-medium text-blue-900 dark:text-blue-100">Other</div>
                     {otherSelected[questionIndex] && (
                       <Input
                         type="text"
@@ -301,7 +301,7 @@ export function QuestionRequestItem({
                         value={otherTexts[questionIndex] || ''}
                         onChange={(e) => handleOtherTextChange(questionIndex, e.target.value)}
                         disabled={status === 'submitting'}
-                        className="mt-1 bg-white border-blue-200 focus:border-blue-400 text-sm"
+                        className="mt-1 bg-white dark:bg-blue-950/30 border-blue-200 dark:border-blue-700 focus:border-blue-400 dark:focus:border-blue-500 text-sm"
                         onClick={(e) => e.stopPropagation()}
                       />
                     )}
@@ -332,7 +332,7 @@ export function QuestionRequestItem({
               disabled={status === 'submitting'}
               variant="outline"
               size="sm"
-              className="border-blue-200 text-blue-700 hover:bg-blue-100"
+              className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
             >
               <X className="h-4 w-4" />
               <span className="ml-1">Decline</span>

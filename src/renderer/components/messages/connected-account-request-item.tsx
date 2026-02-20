@@ -276,37 +276,37 @@ export function ConnectedAccountRequestItem({
 
   // Pending/submitting/connecting state
   return (
-    <div className="border rounded-md bg-blue-50 border-blue-200 text-sm">
+    <div className="border rounded-md bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm">
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
-        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-          <Link2 className="h-4 w-4 text-blue-600" />
+        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
+          <Link2 className="h-4 w-4 text-blue-600 dark:text-blue-400" />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-3">
           {/* Header */}
           <div>
-            <div className="font-medium text-blue-900">
+            <div className="font-medium text-blue-900 dark:text-blue-100">
               Access Requested:{' '}
               <span className="capitalize">
                 {provider?.displayName || toolkit}
               </span>
             </div>
             {reason && (
-              <p className="text-sm text-blue-700 mt-1">{reason}</p>
+              <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">{reason}</p>
             )}
           </div>
 
           {/* Account Selection */}
           {isLoading ? (
-            <div className="flex items-center gap-2 text-blue-600">
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
               <Loader2 className="h-4 w-4 animate-spin" />
               <span>Loading accounts...</span>
             </div>
           ) : accounts.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs text-blue-600 font-medium">
+              <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">
                 Select account(s) to provide:
               </p>
               <div className="space-y-1">
@@ -347,7 +347,7 @@ export function ConnectedAccountRequestItem({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-blue-600">
+            <p className="text-sm text-blue-600 dark:text-blue-400">
               No connected accounts found for {provider?.displayName || toolkit}.
             </p>
           )}
@@ -358,7 +358,7 @@ export function ConnectedAccountRequestItem({
             disabled={status !== 'pending'}
             variant="outline"
             size="sm"
-            className="border-blue-200 text-blue-700 hover:bg-blue-100"
+            className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
           >
             {status === 'connecting' ? (
               <Loader2 className="h-4 w-4 animate-spin mr-1" />
@@ -392,7 +392,7 @@ export function ConnectedAccountRequestItem({
               disabled={status !== 'pending'}
               variant="outline"
               size="sm"
-              className="border-blue-200 text-blue-700 hover:bg-blue-100"
+              className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
             >
               <X className="h-4 w-4" />
               <span className="ml-1">Decline</span>
@@ -403,7 +403,7 @@ export function ConnectedAccountRequestItem({
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           {/* Info text */}
-          <p className="text-xs text-blue-600">
+          <p className="text-xs text-blue-600 dark:text-blue-400">
             Selected accounts will be linked to this agent for future use.
           </p>
         </div>
@@ -447,7 +447,7 @@ function AccountOption({
       <div
         className={cn(
           'flex items-center gap-2 p-2 rounded border',
-          'bg-white border-blue-200'
+          'bg-white dark:bg-blue-900/50 border-blue-200 dark:border-blue-700'
         )}
       >
         <Input
@@ -490,8 +490,8 @@ function AccountOption({
       className={cn(
         'flex items-center gap-2 p-2 rounded border cursor-pointer transition-colors',
         selected
-          ? 'bg-blue-100 border-blue-300'
-          : 'bg-white border-blue-100 hover:border-blue-200',
+          ? 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-600'
+          : 'bg-white dark:bg-blue-950/30 border-blue-100 dark:border-blue-800 hover:border-blue-200 dark:hover:border-blue-700',
         disabled && 'opacity-50 cursor-not-allowed'
       )}
       onClick={() => !disabled && onToggle()}
@@ -519,14 +519,14 @@ function AccountOption({
             <Pencil className="h-3 w-3 text-blue-400" />
           </Button>
         </div>
-        <span className="text-xs text-blue-500">connected {connectedAgo}</span>
+        <span className="text-xs text-blue-500 dark:text-blue-400">connected {connectedAgo}</span>
       </div>
       <span
         className={cn(
           'text-xs px-1.5 py-0.5 rounded shrink-0',
           account.status === 'active'
-            ? 'bg-green-100 text-green-700'
-            : 'bg-red-100 text-red-700'
+            ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400'
+            : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'
         )}
       >
         {account.status}

@@ -171,21 +171,21 @@ export function FileRequestItem({
 
   // Pending/submitting state
   return (
-    <div className="border rounded-md bg-blue-50 border-blue-200 text-sm">
+    <div className="border rounded-md bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm">
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
-        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-          <Upload className="h-4 w-4 text-blue-600" />
+        <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
+          <Upload className="h-4 w-4 text-blue-600 dark:text-blue-400" />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-3">
           {/* Header */}
           <div>
-            <div className="font-medium text-blue-900">File Requested</div>
-            <p className="text-sm text-blue-700 mt-1">{description}</p>
+            <div className="font-medium text-blue-900 dark:text-blue-100">File Requested</div>
+            <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">{description}</p>
             {fileTypes && (
-              <p className="text-xs text-blue-500 mt-0.5">
+              <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
                 Suggested types: {fileTypes}
               </p>
             )}
@@ -196,10 +196,10 @@ export function FileRequestItem({
             className={cn(
               'border-2 border-dashed rounded-md p-4 text-center cursor-pointer transition-colors',
               isDragOver
-                ? 'border-blue-400 bg-blue-100'
+                ? 'border-blue-400 dark:border-blue-500 bg-blue-100 dark:bg-blue-900'
                 : selectedFile
-                  ? 'border-green-300 bg-green-50'
-                  : 'border-blue-200 bg-white hover:border-blue-300'
+                  ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/50'
+                  : 'border-blue-200 dark:border-blue-700 bg-white dark:bg-blue-950/30 hover:border-blue-300 dark:hover:border-blue-600'
             )}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
@@ -215,16 +215,16 @@ export function FileRequestItem({
             />
             {selectedFile ? (
               <div className="flex items-center justify-center gap-2">
-                <FileIcon className="h-4 w-4 text-green-600" />
-                <span className="text-sm text-green-700 font-medium">
+                <FileIcon className="h-4 w-4 text-green-600 dark:text-green-400" />
+                <span className="text-sm text-green-700 dark:text-green-300 font-medium">
                   {selectedFile.name}
                 </span>
-                <span className="text-xs text-green-500">
+                <span className="text-xs text-green-500 dark:text-green-400">
                   ({(selectedFile.size / 1024).toFixed(1)} KB)
                 </span>
               </div>
             ) : (
-              <div className="text-sm text-blue-500">
+              <div className="text-sm text-blue-500 dark:text-blue-400">
                 Drop a file here or click to browse
               </div>
             )}
@@ -253,7 +253,7 @@ export function FileRequestItem({
                   placeholder="Reason (optional)"
                   value={declineReason}
                   onChange={(e) => setDeclineReason(e.target.value)}
-                  className="flex-1 rounded-md border border-blue-200 bg-white px-2 py-1 text-sm"
+                  className="flex-1 rounded-md border border-blue-200 dark:border-blue-700 bg-white dark:bg-blue-950/30 px-2 py-1 text-sm"
                   disabled={status === 'submitting'}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleDecline()
@@ -264,7 +264,7 @@ export function FileRequestItem({
                   disabled={status === 'submitting'}
                   variant="outline"
                   size="sm"
-                  className="border-red-200 text-red-700 hover:bg-red-100"
+                  className="border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900"
                 >
                   Confirm
                 </Button>
@@ -275,7 +275,7 @@ export function FileRequestItem({
                 disabled={status === 'submitting'}
                 variant="outline"
                 size="sm"
-                className="border-blue-200 text-blue-700 hover:bg-blue-100"
+                className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
               >
                 <X className="h-4 w-4" />
                 <span className="ml-1">Decline</span>

@@ -116,25 +116,25 @@ export function SecretRequestItem({
 
   // Pending/submitting state - show input form
   return (
-    <div className="border rounded-md bg-amber-50 border-amber-200 text-sm">
+    <div className="border rounded-md bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800 text-sm">
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
-        <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-          <Key className="h-4 w-4 text-amber-600" />
+        <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center shrink-0">
+          <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
         </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0 space-y-3">
           {/* Header */}
           <div>
-            <div className="font-medium text-amber-900">
+            <div className="font-medium text-amber-900 dark:text-amber-100">
               Secret Requested:{' '}
-              <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-800">
+              <code className="bg-amber-100 dark:bg-amber-900 px-1.5 py-0.5 rounded text-amber-800 dark:text-amber-200">
                 {secretName}
               </code>
             </div>
             {reason && (
-              <p className="text-sm text-amber-700 mt-1">{reason}</p>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">{reason}</p>
             )}
           </div>
 
@@ -147,7 +147,7 @@ export function SecretRequestItem({
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 disabled={status === 'submitting'}
-                className="pr-10 bg-white border-amber-200 focus:border-amber-400"
+                className="pr-10 bg-white dark:bg-amber-950/30 border-amber-200 dark:border-amber-700 focus:border-amber-400 dark:focus:border-amber-500"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && value.trim()) {
                     handleProvide()
@@ -187,7 +187,7 @@ export function SecretRequestItem({
               disabled={status === 'submitting'}
               variant="outline"
               size="sm"
-              className="border-amber-200 text-amber-700 hover:bg-amber-100"
+              className="border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900"
             >
               <X className="h-4 w-4" />
               <span className="ml-1">Decline</span>
@@ -200,7 +200,7 @@ export function SecretRequestItem({
           )}
 
           {/* Info text */}
-          <p className="text-xs text-amber-600">
+          <p className="text-xs text-amber-600 dark:text-amber-400">
             This secret will be saved to your agent and available for future sessions.
           </p>
         </div>
