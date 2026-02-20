@@ -27,6 +27,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  SidebarRail,
 } from '@renderer/components/ui/sidebar'
 import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import { useAgents, type ApiAgent } from '@renderer/hooks/use-agents'
@@ -417,6 +418,8 @@ export function AppSidebar() {
         open={containerSetupOpen}
         onOpenChange={setContainerSetupOpen}
       />
+
+      <SidebarRail />
     </Sidebar>
   )
 }
