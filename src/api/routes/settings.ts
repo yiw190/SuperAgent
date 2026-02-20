@@ -122,6 +122,7 @@ settings.put('/', async (c) => {
       customEnvVars: body.customEnvVars !== undefined
         ? body.customEnvVars
         : currentSettings.customEnvVars,
+      skillsets: currentSettings.skillsets,
     }
 
     // Handle API key updates
