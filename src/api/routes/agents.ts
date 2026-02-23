@@ -1203,6 +1203,7 @@ agents.get('/:id/secrets', async (c) => {
 
     const secrets = await listSecrets(slug)
     const response = secrets.map((secret) => ({
+      id: secret.envVar,
       key: secret.key,
       envVar: secret.envVar,
       hasValue: true,
@@ -1239,7 +1240,7 @@ agents.post('/:id/secrets', async (c) => {
       value,
     })
 
-    return c.json({ key: key.trim(), envVar, hasValue: true }, 201)
+    return c.json({ id: envVar, key: key.trim(), envVar, hasValue: true }, 201)
   } catch (error) {
     console.error('Failed to create secret:', error)
     return c.json({ error: 'Failed to create secret' }, 500)
@@ -1274,7 +1275,7 @@ agents.put('/:id/secrets/:secretId', async (c) => {
       value: newValue,
     })
 
-    return c.json({ key: newKey, envVar: newEnvVar, hasValue: true })
+    return c.json({ id: newEnvVar, key: newKey, envVar: newEnvVar, hasValue: true })
   } catch (error) {
     console.error('Failed to update secret:', error)
     return c.json({ error: 'Failed to update secret' }, 500)
