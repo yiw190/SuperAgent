@@ -9,7 +9,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Alert, AlertDescription } from '@renderer/components/ui/alert'
-import { useSettings, useUpdateSettings, useStartRunner } from '@renderer/hooks/use-settings'
+import { useSettings, useUpdateSettings, useStartRunner, useRefreshAvailability } from '@renderer/hooks/use-settings'
 import { useCreateAgent } from '@renderer/hooks/use-agents'
 import { useSelection } from '@renderer/context/selection-context'
 import { apiFetch } from '@renderer/lib/api'
@@ -25,6 +25,7 @@ import {
   ChevronLeft,
   Plus,
   Trash2,
+  RefreshCw,
 } from 'lucide-react'
 import {
   useConnectedAccounts,
@@ -259,6 +260,7 @@ function ConfigureLLMStep() {
 function DockerSetupStep() {
   const { data: settings } = useSettings()
   const startRunner = useStartRunner()
+  const refreshAvailability = useRefreshAvailability()
 
   const runtimeStatuses = useMemo(() => {
     if (!settings?.runnerAvailability) return []
@@ -290,11 +292,23 @@ function DockerSetupStep() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-bold">Set Up Container Runtime</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Superagent runs AI agents in isolated containers. You need a container runtime installed and running.
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-xl font-bold">Set Up Container Runtime</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Superagent runs AI agents in isolated containers. You need a container runtime installed and running.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs shrink-0"
+          onClick={() => refreshAvailability.mutate()}
+          disabled={refreshAvailability.isPending}
+        >
+          <RefreshCw className={`h-3 w-3 mr-1 ${refreshAvailability.isPending ? 'animate-spin' : ''}`} />
+          Recheck
+        </Button>
       </div>
 
       {hasAvailableRunner && (

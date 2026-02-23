@@ -8,8 +8,8 @@ import {
   DialogTitle,
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
-import { useSettings, useStartRunner } from '@renderer/hooks/use-settings'
-import { Play, Loader2, ExternalLink, Check } from 'lucide-react'
+import { useSettings, useStartRunner, useRefreshAvailability } from '@renderer/hooks/use-settings'
+import { Play, Loader2, ExternalLink, Check, RefreshCw } from 'lucide-react'
 
 interface ContainerSetupDialogProps {
   open: boolean
@@ -40,6 +40,7 @@ const RUNTIME_INFO: Record<string, { name: string; description: string; installU
 export function ContainerSetupDialog({ open, onOpenChange }: ContainerSetupDialogProps) {
   const { data: settings } = useSettings()
   const startRunner = useStartRunner()
+  const refreshAvailability = useRefreshAvailability()
 
   const runtimeStatuses = useMemo(() => {
     if (!settings?.runnerAvailability) return []
@@ -85,7 +86,19 @@ export function ContainerSetupDialog({ open, onOpenChange }: ContainerSetupDialo
           </div>
 
           <div className="border-t pt-4">
-            <p className="text-sm font-medium mb-3">Supported Runtimes</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-medium">Supported Runtimes</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs"
+                onClick={() => refreshAvailability.mutate()}
+                disabled={refreshAvailability.isPending}
+              >
+                <RefreshCw className={`h-3 w-3 mr-1 ${refreshAvailability.isPending ? 'animate-spin' : ''}`} />
+                Recheck
+              </Button>
+            </div>
             <div className="space-y-3">
               {runtimeStatuses.map((runtime) => (
                 <div
