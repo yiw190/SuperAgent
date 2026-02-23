@@ -12,15 +12,15 @@ import browser from './routes/browser'
 import skillsets from './routes/skillsets'
 import usage from './routes/usage'
 import remoteMcps from './routes/remote-mcps'
-import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
+import { initializeServices } from '@shared/lib/startup'
 
 const app = new Hono()
 
-// Start the task scheduler for non-Electron environments (Vite dev server, web server.ts).
-// In Electron, the scheduler is started in main/index.ts after SUPERAGENT_DATA_DIR is set.
+// Initialize services for non-Electron environments (Vite dev server).
+// In Electron, these are started in main/index.ts after SUPERAGENT_DATA_DIR is set.
 if (process.type !== 'browser') {
-  taskScheduler.start().catch((error) => {
-    console.error('Failed to start task scheduler:', error)
+  initializeServices().catch((error) => {
+    console.error('Failed to initialize services:', error)
   })
 }
 

@@ -7,7 +7,6 @@ import { containerManager } from '@shared/lib/container/container-manager'
 import { hostBrowserManager } from '../main/host-browser-manager'
 import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
 import { autoSleepMonitor } from '@shared/lib/scheduler/auto-sleep-monitor'
-import { listAgents } from '@shared/lib/services/agent-service'
 import { findAvailablePort } from '../main/find-port'
 
 const app = new Hono()
@@ -73,26 +72,8 @@ async function start() {
   server = serve({ fetch: app.fetch, port }, (info) => {
     console.log(`API server running on http://localhost:${info.port}`)
 
-    // Initialize container manager with all agents and start status sync
-    listAgents().then((agents) => {
-      const slugs = agents.map((a) => a.slug)
-      return containerManager.initializeAgents(slugs)
-    }).then(() => {
-      containerManager.startStatusSync()
-      containerManager.startHealthMonitor()
-    }).catch((error) => {
-      console.error('Failed to initialize container manager:', error)
-    })
-
-    // Start the task scheduler after server is ready
-    taskScheduler.start().catch((error) => {
-      console.error('Failed to start task scheduler:', error)
-    })
-
-    // Start the auto-sleep monitor
-    autoSleepMonitor.start().catch((error) => {
-      console.error('Failed to start auto-sleep monitor:', error)
-    })
+    // Services are initialized by api/index.ts (which we import above).
+    // No need to call initializeServices() here — it already ran at module load.
   })
 }
 

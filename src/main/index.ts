@@ -31,7 +31,7 @@ import api from '../api'
 import { containerManager } from '@shared/lib/container/container-manager'
 import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
 import { autoSleepMonitor } from '@shared/lib/scheduler/auto-sleep-monitor'
-import { listAgents } from '@shared/lib/services/agent-service'
+import { initializeServices } from '@shared/lib/startup'
 import { findAvailablePort } from './find-port'
 import { setupBrowserStreamProxy } from './browser-stream-proxy'
 
@@ -308,29 +308,9 @@ async function startApp() {
   apiServer = serve({ fetch: api.fetch, port: actualApiPort }, () => {
     console.log(`API server running on http://localhost:${actualApiPort}`)
 
-    // Initialize container manager with all agents and start status sync
-    listAgents().then((agents) => {
-      const slugs = agents.map((a) => a.slug)
-      return containerManager.initializeAgents(slugs)
-    }).then(() => {
-      // Check image availability and pull if needed (non-blocking)
-      containerManager.ensureImageReady().catch((error) => {
-        console.error('Failed to ensure image ready:', error)
-      })
-      containerManager.startStatusSync()
-      containerManager.startHealthMonitor()
-    }).catch((error) => {
-      console.error('Failed to initialize container manager:', error)
-    })
-
-    // Start the task scheduler after API server is ready
-    taskScheduler.start().catch((error) => {
-      console.error('Failed to start task scheduler:', error)
-    })
-
-    // Start the auto-sleep monitor
-    autoSleepMonitor.start().catch((error) => {
-      console.error('Failed to start auto-sleep monitor:', error)
+    // Initialize all background services
+    initializeServices().catch((error) => {
+      console.error('Failed to initialize services:', error)
     })
 
     // Start listening for notifications (for when window is closed)
