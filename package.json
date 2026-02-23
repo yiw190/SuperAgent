@@ -12,7 +12,7 @@
     "build:web": "vite build",
     "build:api": "tsup",
     "build:electron": "electron-vite build",
-    "preview": "npm run build && node dist/web/server.js",
+    "preview": "npm run build && node dist/web/server.mjs",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:win": "electron-vite build && electron-builder --win",
     "typecheck": "tsc --noEmit",
