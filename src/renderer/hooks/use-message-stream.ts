@@ -213,6 +213,11 @@ function getOrCreateEventSource(
         if (Array.isArray(data.slashCommands)) {
           sessionSlashCommands.set(sessionId, data.slashCommands)
         }
+        // If there was a streaming tool use, trigger a refetch so the persisted
+        // version is available before we clear the streaming state.
+        if (current?.streamingToolUse) {
+          queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
+        }
         streamStates.set(sessionId, {
           isActive: current?.isActive ?? false,
           isStreaming: true,
@@ -311,6 +316,12 @@ function getOrCreateEventSource(
           contextUsage: current?.contextUsage ?? null,
           activeSubagent: current?.activeSubagent ?? null,
         })
+      }
+      else if (data.type === 'messages_updated') {
+        // Server signals that a message has been persisted to JSONL.
+        // Refetch so that persisted data is available before stream_start
+        // clears the streaming tool use state (prevents tool call flicker).
+        queryClient.invalidateQueries({ queryKey: ['messages', sessionId] })
       }
       else if (data.type === 'tool_call' || data.type === 'tool_result') {
         // Message has been persisted - keep streamingMessage visible until refetch completes

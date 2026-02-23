@@ -380,6 +380,21 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
     return elapsed
   }, [messages, isActive])
 
+  // If there's unpersisted streaming content, defer the last turn's elapsed time
+  // to render after the streaming section (otherwise it appears above the streaming message).
+  const deferredElapsedMessageId = useMemo(() => {
+    if (!messages) return null
+    const hasUnpersistedStreaming =
+      (streamingMessage && !isStreamingMessagePersisted) ||
+      (streamingToolUse && !isStreamingToolUsePersisted)
+    if (!hasUnpersistedStreaming) return null
+    // Find the last persisted assistant message — that's where the elapsed time would wrongly appear
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].type === 'assistant') return messages[i].id
+    }
+    return null
+  }, [messages, streamingMessage, isStreamingMessagePersisted, streamingToolUse, isStreamingToolUsePersisted])
+
   // Determine which messages could have tool calls that are still running.
   // Only the trailing assistant messages (after the last user message) can have running tools,
   // and only if the session is active and there's no pending user message (which means user moved on).
@@ -422,7 +437,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
             ) : (
               <>
                 <MessageItem message={item as ApiMessage} agentSlug={agentSlug} sessionId={sessionId} isSessionActive={canHaveRunningToolCalls.has(item.id)} activeSubagent={activeSubagent} onRemoveMessage={handleRemoveMessage} onRemoveToolCall={handleRemoveToolCall} />
-                {turnElapsedTimes.has(item.id) && (
+                {turnElapsedTimes.has(item.id) && item.id !== deferredElapsedMessageId && (
                   <div className="text-xs text-muted-foreground pb-1 -mt-1 tabular-nums ml-11 italic">
                     Agent took {formatElapsed(turnElapsedTimes.get(item.id)!)}
                   </div>
@@ -471,6 +486,13 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
                 partialInput={streamingToolUse.partialInput}
               />
             </div>
+          </div>
+        )}
+
+        {/* Deferred turn elapsed time — shown after streaming content so it appears below, not above */}
+        {deferredElapsedMessageId && turnElapsedTimes.has(deferredElapsedMessageId) && (
+          <div className="text-xs text-muted-foreground pb-1 -mt-1 tabular-nums ml-11 italic">
+            Agent took {formatElapsed(turnElapsedTimes.get(deferredElapsedMessageId)!)}
           </div>
         )}
 
