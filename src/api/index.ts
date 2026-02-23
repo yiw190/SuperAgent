@@ -16,11 +16,13 @@ import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
 
 const app = new Hono()
 
-// Start the task scheduler (singleton pattern handles HMR/multiple imports)
-// This ensures the scheduler runs in both development (Vite) and production (server.ts)
-taskScheduler.start().catch((error) => {
-  console.error('Failed to start task scheduler:', error)
-})
+// Start the task scheduler for non-Electron environments (Vite dev server, web server.ts).
+// In Electron, the scheduler is started in main/index.ts after SUPERAGENT_DATA_DIR is set.
+if (process.type !== 'browser') {
+  taskScheduler.start().catch((error) => {
+    console.error('Failed to start task scheduler:', error)
+  })
+}
 
 // Enable CORS for all routes
 app.use('*', cors())
