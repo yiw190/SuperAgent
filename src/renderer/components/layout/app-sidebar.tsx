@@ -1,5 +1,5 @@
 
-import { ChevronRight, Plus, Settings, AlertTriangle, Clock, LayoutDashboard, Loader2 } from 'lucide-react'
+import { ChevronRight, Plus, Settings, AlertTriangle, Clock, LayoutDashboard, Loader2, WifiOff } from 'lucide-react'
 import { ErrorBoundary } from '@renderer/components/ui/error-boundary'
 import { useState, useEffect, useRef } from 'react'
 import { isElectron, getPlatform } from '@renderer/lib/env'
@@ -44,6 +44,7 @@ import { useArtifacts, type ArtifactInfo } from '@renderer/hooks/use-artifacts'
 import { GlobalSettingsDialog } from '@renderer/components/settings/global-settings-dialog'
 import { ContainerSetupDialog } from '@renderer/components/settings/container-setup-dialog'
 import { NotificationBell } from '@renderer/components/notifications/notification-bell'
+import { useIsOnline } from '@renderer/context/connectivity-context'
 
 // Session sub-item that tracks its streaming state
 function SessionSubItem({
@@ -268,6 +269,8 @@ export function AppSidebar() {
   const { data: settings } = useSettings()
   const isFullScreen = useFullScreen()
 
+  const isOnline = useIsOnline()
+
   const readiness = settings?.runtimeReadiness
   const isRuntimeUnavailable = readiness?.status === 'RUNTIME_UNAVAILABLE' || readiness?.status === 'ERROR'
   const isPullingOrBuilding = readiness?.status === 'PULLING_IMAGE'
@@ -301,6 +304,17 @@ export function AppSidebar() {
           </button>
         </div>
       </SidebarHeader>
+
+      {!isOnline && (
+        <div className="px-2 pt-2">
+          <Alert variant="destructive" className="py-2">
+            <WifiOff className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              No internet connection. Some features may be unavailable.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       {isRuntimeUnavailable && (
         <div className="px-2 pt-2">

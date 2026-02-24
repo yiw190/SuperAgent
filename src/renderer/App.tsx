@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { QueryProvider } from './providers/query-provider'
 import { SelectionProvider } from './context/selection-context'
+import { ConnectivityProvider } from './context/connectivity-context'
 import { DialogProvider } from './context/dialog-context'
 import { AppSidebar } from './components/layout/app-sidebar'
 import { MainContent } from './components/layout/main-content'
@@ -50,9 +51,11 @@ export default function App() {
   return (
     <QueryProvider>
       <SelectionProvider>
-        <ErrorBoundary>
-          <AppContent />
-        </ErrorBoundary>
+        <ConnectivityProvider>
+          <ErrorBoundary>
+            <AppContent />
+          </ErrorBoundary>
+        </ConnectivityProvider>
       </SelectionProvider>
     </QueryProvider>
   )

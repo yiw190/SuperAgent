@@ -17,7 +17,8 @@ import { ConnectedAccountRequestItem } from './connected-account-request-item'
 import { RemoteMcpRequestItem } from './remote-mcp-request-item'
 import { QuestionRequestItem } from './question-request-item'
 import { FileRequestItem } from './file-request-item'
-import { Loader2, Wrench } from 'lucide-react'
+import { Loader2, Wrench, WifiOff } from 'lucide-react'
+import { useIsOnline } from '@renderer/context/connectivity-context'
 import { useEffect, useRef, useCallback, useMemo, Fragment } from 'react'
 import { formatElapsed } from '@renderer/hooks/use-elapsed-timer'
 import type { ApiMessage, ApiCompactBoundary } from '@shared/lib/types/api'
@@ -83,6 +84,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
     pendingQuestionRequests: sseQuestionRequests,
     pendingFileRequests: sseFileRequests,
   } = useMessageStream(sessionId, agentSlug)
+  const isOnline = useIsOnline()
 
   // Derive pending requests from message history (for page refresh recovery)
   // Tool calls without a result are still pending, but only if there are no
@@ -493,6 +495,22 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
         {deferredElapsedMessageId && turnElapsedTimes.has(deferredElapsedMessageId) && (
           <div className="text-xs text-muted-foreground pb-1 -mt-1 tabular-nums ml-11 italic">
             Agent took {formatElapsed(turnElapsedTimes.get(deferredElapsedMessageId)!)}
+          </div>
+        )}
+
+        {/* Connection lost warning during active session */}
+        {isActive && !isOnline && (
+          <div className="flex gap-3">
+            <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-amber-100 dark:bg-amber-900/30">
+              <WifiOff className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div className="flex-1 rounded-lg px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+              Internet connection lost.
+              <br />
+              <span className="text-xs text-amber-600 dark:text-amber-500">
+                The agent may still be running. Messages will appear once connection is restored.
+              </span>
+            </div>
           </div>
         )}
 

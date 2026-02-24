@@ -3,7 +3,8 @@ import { Button } from '@renderer/components/ui/button'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSendMessage, useUploadFile, useInterruptSession } from '@renderer/hooks/use-messages'
 import { useMessageStream } from '@renderer/hooks/use-message-stream'
-import { Send, Loader2, StopCircle, Paperclip } from 'lucide-react'
+import { Send, Loader2, StopCircle, Paperclip, WifiOff } from 'lucide-react'
+import { useIsOnline } from '@renderer/context/connectivity-context'
 import { AttachmentPreview, type Attachment } from './attachment-preview'
 import { SlashCommandMenu } from './slash-command-menu'
 
@@ -26,6 +27,8 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
   const uploadFile = useUploadFile()
   const interruptSession = useInterruptSession()
   const { isActive, slashCommands } = useMessageStream(sessionId, agentSlug)
+  const isOnline = useIsOnline()
+  const isOffline = !isOnline
 
   // Extract the slash command prefix being typed (e.g. "co" from "/co")
   const slashFilter = useMemo(() => {
@@ -230,7 +233,7 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
     }
   }
 
-  const isDisabled = sendMessage.isPending || isActive || isUploading
+  const isDisabled = sendMessage.isPending || isActive || isUploading || isOffline
 
   return (
     <form
@@ -273,7 +276,13 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
           onKeyDown={handleKeyDown}
           onFocus={() => { if (slashFilter !== null && slashCommands.length > 0) setSlashMenuOpen(true) }}
           onBlur={() => setSlashMenuOpen(false)}
-          placeholder={isActive ? 'Agent is responding...' : 'Type a message...'}
+          placeholder={
+            isOffline
+              ? 'No internet connection...'
+              : isActive
+                ? 'Agent is responding...'
+                : 'Type a message...'
+          }
           disabled={isDisabled}
           className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[40px] max-h-[200px] overflow-y-auto"
           rows={1}
@@ -309,6 +318,12 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
           </Button>
         )}
       </div>
+      {isOffline && !isActive && (
+        <div className="flex items-center gap-1.5 mt-2 text-xs text-destructive">
+          <WifiOff className="h-3 w-3 shrink-0" />
+          <span>No internet connection. Messages cannot be sent.</span>
+        </div>
+      )}
     </form>
   )
 }
