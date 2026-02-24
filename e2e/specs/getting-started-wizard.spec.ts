@@ -97,10 +97,10 @@ test.describe('Getting Started Wizard', () => {
     await wizardPage.expectStep(3)
     await expect(page.getByText('Set Up Composio')).toBeVisible()
 
-    // Go to Step 4: Create Agent (optional)
-    await wizardPage.clickNext()
+    // Go to Step 4: Create Agent (optional) - Skip since no Composio input
+    await wizardPage.clickSkip()
     await wizardPage.expectStep(4)
-    await expect(page.getByText('Create Your First Agent')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Create Your First Agent' })).toBeVisible()
 
     // Finish
     await wizardPage.clickFinish()
