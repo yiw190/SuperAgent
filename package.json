@@ -32,7 +32,7 @@
     "build:container": "docker build -t superagent-container ./agent-container"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.77.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@hono/node-server": "^1.13.7",
     "@monaco-editor/react": "^4.7.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",

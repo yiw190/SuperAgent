@@ -46,8 +46,10 @@ RUN apt-get update && apt-get install -y \
 # Install UV (Universal Virtualenv)
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code@2.1.47
+# Install Claude Code CLI (native binary, pinned version)
+RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.58 && \
+    cp /root/.local/bin/claude /usr/local/bin/claude && \
+    chmod 755 /usr/local/bin/claude
 
 # Install TypeScript and ts-node globally
 RUN npm install -g typescript ts-node
@@ -116,6 +118,7 @@ ENV AGENT_BROWSER_STREAM_PORT=9223
 ENV AGENT_BROWSER_ARGS="--no-sandbox,--disable-blink-features=AutomationControlled,--disable-features=AutomationControlled,--disable-infobars,--disable-background-timer-throttling,--disable-popup-blocking,--disable-backgrounding-occluded-windows,--disable-renderer-backgrounding,--disable-component-update,--remote-debugging-port=9222"
 ENV AGENT_BROWSER_USER_AGENT="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 ENV AGENT_BROWSER_PROFILE=/workspace/.browser-profile
+ENV DISABLE_AUTOUPDATER=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
