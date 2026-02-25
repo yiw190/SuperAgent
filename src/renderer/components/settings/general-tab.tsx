@@ -23,14 +23,7 @@ import {
 } from '@renderer/components/ui/alert-dialog'
 import { useSettings, useUpdateSettings, useFactoryReset } from '@renderer/hooks/use-settings'
 import { RotateCcw, Wand2 } from 'lucide-react'
-import { AnthropicApiKeyInput } from './anthropic-api-key-input'
 import { UpdateSection } from './update-section'
-
-const MODEL_OPTIONS = [
-  { value: 'claude-haiku-4-5', label: 'Claude 4.5 Haiku' },
-  { value: 'claude-sonnet-4-5', label: 'Claude 4.5 Sonnet' },
-  { value: 'claude-opus-4-5', label: 'Claude 4.5 Opus' },
-]
 
 interface GeneralTabProps {
   onOpenWizard: () => void
@@ -127,65 +120,6 @@ export function GeneralTab({ onOpenWizard }: GeneralTabProps) {
         <p className="text-xs text-muted-foreground">
           Configure via <code className="bg-muted px-1 rounded">SUPERAGENT_DATA_DIR</code> environment variable.
         </p>
-      </div>
-
-      {/* API Keys Section */}
-      <div className="pt-4 border-t space-y-4">
-        <h3 className="text-sm font-medium">API Keys</h3>
-        <AnthropicApiKeyInput disabled={isLoading} />
-      </div>
-
-      {/* Models Section */}
-      <div className="pt-4 border-t space-y-4">
-        <h3 className="text-sm font-medium">Models</h3>
-        <div className="space-y-2">
-          <Label htmlFor="agent-model">Agent Model</Label>
-          <Select
-            value={settings?.models?.agentModel ?? 'claude-opus-4-5'}
-            onValueChange={(value) => {
-              updateSettings.mutate({ models: { agentModel: value } })
-            }}
-            disabled={isLoading}
-          >
-            <SelectTrigger id="agent-model">
-              <SelectValue placeholder="Select a model" />
-            </SelectTrigger>
-            <SelectContent>
-              {MODEL_OPTIONS.map((model) => (
-                <SelectItem key={model.value} value={model.value}>
-                  {model.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Model used for agent sessions
-          </p>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="summarizer-model">Summarizer Model</Label>
-          <Select
-            value={settings?.models?.summarizerModel ?? 'claude-haiku-4-5'}
-            onValueChange={(value) => {
-              updateSettings.mutate({ models: { summarizerModel: value } })
-            }}
-            disabled={isLoading}
-          >
-            <SelectTrigger id="summarizer-model">
-              <SelectValue placeholder="Select a model" />
-            </SelectTrigger>
-            <SelectContent>
-              {MODEL_OPTIONS.map((model) => (
-                <SelectItem key={model.value} value={model.value}>
-                  {model.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Model used for session name generation and API key validation
-          </p>
-        </div>
       </div>
 
       {/* Software Updates - Only in Electron */}

@@ -1,6 +1,6 @@
 
 import * as React from 'react'
-import { Settings, Link2, Container, Bell, Globe, Library, BarChart3, Plug } from 'lucide-react'
+import { Settings, Link2, Container, Bell, Globe, Library, BarChart3, Plug, Brain } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -25,11 +25,13 @@ import { BrowserTab } from './browser-tab'
 import { SkillsetsTab } from './skillsets-tab'
 import { UsageTab } from './usage-tab'
 import { RemoteMcpsTab } from './remote-mcps-tab'
+import { LlmTab } from './llm-tab'
 
-type SettingsSection = 'general' | 'notifications' | 'runtime' | 'browser' | 'composio' | 'remote-mcps' | 'skillsets' | 'usage'
+type SettingsSection = 'general' | 'llm' | 'notifications' | 'runtime' | 'browser' | 'composio' | 'remote-mcps' | 'skillsets' | 'usage'
 
 const navItems = [
   { id: 'general' as const, name: 'General', icon: Settings },
+  { id: 'llm' as const, name: 'LLM', icon: Brain },
   { id: 'notifications' as const, name: 'Notifications', icon: Bell },
   { id: 'runtime' as const, name: 'Runtime', icon: Container },
   { id: 'browser' as const, name: 'Browser Use', icon: Globe },
@@ -101,6 +103,7 @@ export function GlobalSettingsDialog({
             </header>
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
               {activeSection === 'general' && <GeneralTab onOpenWizard={onOpenWizard} />}
+              {activeSection === 'llm' && <LlmTab />}
               {activeSection === 'notifications' && <NotificationsTab />}
               {activeSection === 'runtime' && <RuntimeTab />}
               {activeSection === 'browser' && <BrowserTab />}
