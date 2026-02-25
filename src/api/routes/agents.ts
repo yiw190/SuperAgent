@@ -2010,6 +2010,111 @@ agents.post('/:id/skills/refresh', async (c) => {
   }
 })
 
+// GET /api/agents/:id/skills/:dir/files - List all files in a skill directory
+agents.get('/:id/skills/:dir/files', async (c) => {
+  try {
+    const agentSlug = c.req.param('id')
+    const dir = c.req.param('dir')
+
+    if (!dir || dir.includes('/') || dir.includes('\\') || dir.includes('..')) {
+      return c.json({ error: 'Invalid skill directory name' }, 400)
+    }
+
+    const skillDir = path.join(getAgentWorkspaceDir(agentSlug), '.claude', 'skills', dir)
+
+    if (!fs.existsSync(skillDir)) {
+      return c.json({ error: 'Skill directory not found' }, 404)
+    }
+
+    const files: Array<{ path: string; type: 'file' | 'directory' }> = []
+
+    const walk = async (currentDir: string, prefix: string) => {
+      const entries = await fs.promises.readdir(currentDir, { withFileTypes: true })
+      for (const entry of entries) {
+        const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name
+        if (entry.isDirectory()) {
+          files.push({ path: relativePath, type: 'directory' })
+          await walk(path.join(currentDir, entry.name), relativePath)
+        } else {
+          files.push({ path: relativePath, type: 'file' })
+        }
+      }
+    }
+
+    await walk(skillDir, '')
+    files.sort((a, b) => {
+      if (a.type !== b.type) return a.type === 'directory' ? -1 : 1
+      return a.path.localeCompare(b.path)
+    })
+
+    return c.json({ files })
+  } catch (error) {
+    console.error('Failed to list skill files:', error)
+    return c.json({ error: 'Failed to list skill files' }, 500)
+  }
+})
+
+// GET /api/agents/:id/skills/:dir/files/content - Read a skill file
+agents.get('/:id/skills/:dir/files/content', async (c) => {
+  try {
+    const agentSlug = c.req.param('id')
+    const dir = c.req.param('dir')
+    const filePath = c.req.query('path')
+
+    if (!dir || dir.includes('/') || dir.includes('\\') || dir.includes('..')) {
+      return c.json({ error: 'Invalid skill directory name' }, 400)
+    }
+    if (!filePath) {
+      return c.json({ error: 'path query parameter is required' }, 400)
+    }
+
+    const skillDir = path.join(getAgentWorkspaceDir(agentSlug), '.claude', 'skills', dir)
+    const resolved = path.resolve(skillDir, filePath)
+
+    if (!resolved.startsWith(skillDir + path.sep) && resolved !== skillDir) {
+      return c.json({ error: 'Invalid file path' }, 400)
+    }
+
+    const content = await fs.promises.readFile(resolved, 'utf-8')
+    return c.json({ content, path: filePath })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return c.json({ error: 'File not found' }, 404)
+    }
+    console.error('Failed to read skill file:', error)
+    return c.json({ error: 'Failed to read skill file' }, 500)
+  }
+})
+
+// PUT /api/agents/:id/skills/:dir/files/content - Write a skill file
+agents.put('/:id/skills/:dir/files/content', async (c) => {
+  try {
+    const agentSlug = c.req.param('id')
+    const dir = c.req.param('dir')
+    const { path: filePath, content } = await c.req.json()
+
+    if (!dir || dir.includes('/') || dir.includes('\\') || dir.includes('..')) {
+      return c.json({ error: 'Invalid skill directory name' }, 400)
+    }
+    if (!filePath || typeof content !== 'string') {
+      return c.json({ error: 'path and content are required' }, 400)
+    }
+
+    const skillDir = path.join(getAgentWorkspaceDir(agentSlug), '.claude', 'skills', dir)
+    const resolved = path.resolve(skillDir, filePath)
+
+    if (!resolved.startsWith(skillDir + path.sep) && resolved !== skillDir) {
+      return c.json({ error: 'Invalid file path' }, 400)
+    }
+
+    await fs.promises.writeFile(resolved, content, 'utf-8')
+    return c.json({ saved: true })
+  } catch (error) {
+    console.error('Failed to write skill file:', error)
+    return c.json({ error: 'Failed to write skill file' }, 500)
+  }
+})
+
 // GET /api/agents/:id/audit-log - Get combined proxy + MCP audit log for agent
 agents.get('/:id/audit-log', async (c) => {
   try {

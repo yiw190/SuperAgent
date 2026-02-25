@@ -190,6 +190,14 @@ export interface ApiDiscoverableSkill {
   requiredEnvVars?: Array<{ name: string; description: string }>
 }
 
+/**
+ * File entry in a skill's directory tree
+ */
+export interface ApiSkillFileEntry {
+  path: string
+  type: 'file' | 'directory'
+}
+
 // ============================================================================
 // Skillset API Types
 // ============================================================================
