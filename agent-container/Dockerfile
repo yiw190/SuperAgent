@@ -100,8 +100,9 @@ RUN npm run build
 RUN useradd -m -s /bin/bash claude && \
     chown -R claude:claude /app /workspace
 
-# Copy skills into the user's Claude config directory (after user creation)
+# Copy skills and settings into the user's Claude config directory (after user creation)
 COPY skills/ /home/claude/.claude/skills/
+COPY settings.json /home/claude/.claude/settings.json
 RUN chown -R claude:claude /home/claude/.claude
 
 # Switch to non-root user
