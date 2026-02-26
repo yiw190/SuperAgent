@@ -67,6 +67,7 @@ export interface RequiredEnvVar {
 
 /** Parsed metadata section from SKILL.md frontmatter */
 export interface SkillFrontmatterMetadata {
+  name?: string
   version?: string
   required_env_vars?: RequiredEnvVar[]
 }

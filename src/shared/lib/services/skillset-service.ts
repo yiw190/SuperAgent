@@ -123,6 +123,10 @@ export function parseSkillFrontmatter(content: string): SkillFrontmatterMetadata
     const metadata = (parsed.metadata as Record<string, unknown>) || {}
     const result: SkillFrontmatterMetadata = {}
 
+    if (typeof parsed.name === 'string') {
+      result.name = parsed.name
+    }
+
     if (metadata.version !== undefined) {
       result.version = String(metadata.version)
     }
@@ -525,6 +529,7 @@ export async function getAgentSkillsWithStatus(
     if (!skillMdContent) continue
 
     const description = parseDescription(skillMdContent)
+    const frontmatter = parseSkillFrontmatter(skillMdContent)
     const meta = await getInstalledSkillMetadata(agentSlug, entry.name)
 
     let status: SkillStatus
@@ -561,7 +566,7 @@ export async function getAgentSkillsWithStatus(
     }
 
     skills.push({
-      name: meta?.skillName || getDisplayName(entry.name),
+      name: meta?.skillName || frontmatter.name || getDisplayName(entry.name),
       description,
       path: entry.name,
       status,
