@@ -38,6 +38,10 @@ import { setupBrowserStreamProxy } from './browser-stream-proxy'
 // Set the app name (shows in macOS menu bar instead of "Electron" during dev)
 app.name = 'SuperAgent'
 
+// Force overlay scrollbars so macOS "always show scrollbars" setting doesn't
+// cause ugly permanent scrollbars in the app
+app.commandLine.appendSwitch('enable-features', 'OverlayScrollbar')
+
 // Use a more exotic default port to avoid conflicts
 const DEFAULT_API_PORT = 47891
 let actualApiPort: number = DEFAULT_API_PORT
