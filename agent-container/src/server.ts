@@ -619,7 +619,17 @@ async function launchHostBrowserIfNeeded(): Promise<HostBrowserInfo | undefined>
     throw new Error(`Failed to launch host browser: ${body}`);
   }
 
-  const data = await response.json() as { port: number; downloadDir?: string };
+  const data = await response.json() as { port?: number; cdpUrl?: string; downloadDir?: string };
+
+  // Remote providers (e.g. Browserbase) return a CDP URL directly
+  if (data.cdpUrl) {
+    return { cdpUrl: data.cdpUrl, hostDownloadDir: data.downloadDir || '' };
+  }
+
+  // Local providers (e.g. Chrome) return a port — resolve to CDP URL
+  if (!data.port) {
+    throw new Error('Host browser response missing both cdpUrl and port');
+  }
 
   // Resolve host.docker.internal to its IP address. Chrome's CDP server
   // validates the Host header and only accepts "localhost" or IP addresses,
@@ -1341,6 +1351,8 @@ let cdpScreencast: {
   msgId: number;
   lastDeviceWidth: number;
   lastDeviceHeight: number;
+  /** CDP session ID for flattened session mode (remote providers like Browserbase) */
+  cdpSessionId: string | null;
 } | null = null;
 
 /** Derive the CDP HTTP endpoint from the current browser state */
@@ -1381,72 +1393,161 @@ async function queryDaemonTabs(): Promise<Array<{ index: number; url: string; ti
   });
 }
 
-/** Find the CDP page target that corresponds to agent-browser's active page */
-async function findActivePageTarget(): Promise<{ id: string; wsUrl: string } | null> {
-  const endpoint = getCdpHttpEndpoint();
+/** Result from findActivePageTarget */
+interface ActivePageTarget {
+  id: string;
+  wsUrl: string;
+  /** If true, wsUrl is a browser-level URL; connectCdpToTarget must use Target.attachToTarget */
+  requiresSession: boolean;
+}
 
-  let targets: Array<{ id: string; type: string; url: string; webSocketDebuggerUrl: string }>;
+/** Find the CDP page target that corresponds to agent-browser's active page */
+async function findActivePageTarget(): Promise<ActivePageTarget | null> {
+  // Try Chrome's HTTP /json endpoint first (works for local Chrome)
+  const endpoint = getCdpHttpEndpoint();
   try {
     const res = await fetch(`${endpoint}/json`);
-    targets = await res.json() as typeof targets;
-  } catch (err) {
-    console.error('[CDP] Failed to fetch targets:', err);
-    return null;
-  }
+    const targets = await res.json() as Array<{ id: string; type: string; url: string; webSocketDebuggerUrl: string }>;
 
-  const pages = targets.filter(t => t.type === 'page');
-  if (pages.length === 0) return null;
+    const pages = targets.filter(t => t.type === 'page');
+    if (pages.length > 0) {
+      // Chrome's /json may return webSocketDebuggerUrl with localhost which won't
+      // work from inside a Docker container. Rewrite to the host we actually used.
+      const cdpHost = endpoint.replace(/^https?:\/\//, '');
+      for (const page of pages) {
+        page.webSocketDebuggerUrl = page.webSocketDebuggerUrl.replace(/^ws:\/\/[^/]+/, `ws://${cdpHost}`);
+      }
 
-  // Chrome's /json may return webSocketDebuggerUrl with localhost which won't
-  // work from inside a Docker container. Rewrite to the host we actually used.
-  const cdpHost = endpoint.replace(/^https?:\/\//, '');
-  for (const page of pages) {
-    page.webSocketDebuggerUrl = page.webSocketDebuggerUrl.replace(/^ws:\/\/[^/]+/, `ws://${cdpHost}`);
-  }
+      if (pages.length === 1) return { id: pages[0].id, wsUrl: pages[0].webSocketDebuggerUrl, requiresSession: false };
 
-  if (pages.length === 1) return { id: pages[0].id, wsUrl: pages[0].webSocketDebuggerUrl };
+      // Ask agent-browser daemon which tab is active and match to a CDP target
+      try {
+        const tabs = await queryDaemonTabs();
+        const active = tabs.find(t => t.active);
+        if (active) {
+          const byUrl = pages.find(p => p.url === active.url);
+          if (byUrl) return { id: byUrl.id, wsUrl: byUrl.webSocketDebuggerUrl, requiresSession: false };
+          if (active.index < pages.length) return { id: pages[active.index].id, wsUrl: pages[active.index].webSocketDebuggerUrl, requiresSession: false };
+        }
+      } catch (err) {
+        console.error('[CDP] Daemon tab query failed:', err);
+      }
 
-  // Ask agent-browser daemon which tab is active and match to a CDP target
-  try {
-    const tabs = await queryDaemonTabs();
-    const active = tabs.find(t => t.active);
-    if (active) {
-      const byUrl = pages.find(p => p.url === active.url);
-      if (byUrl) return { id: byUrl.id, wsUrl: byUrl.webSocketDebuggerUrl };
-      if (active.index < pages.length) return { id: pages[active.index].id, wsUrl: pages[active.index].webSocketDebuggerUrl };
+      // Fallback: last page (most recently created)
+      const last = pages[pages.length - 1];
+      return { id: last.id, wsUrl: last.webSocketDebuggerUrl, requiresSession: false };
     }
-  } catch (err) {
-    console.error('[CDP] Daemon tab query failed:', err);
+  } catch {
+    // HTTP /json not available — fall through to WebSocket CDP approach
   }
 
-  // Fallback: last page (most recently created)
-  const last = pages[pages.length - 1];
-  return { id: last.id, wsUrl: last.webSocketDebuggerUrl };
+  // For remote CDP providers (e.g. Browserbase), try the host API debug endpoint first.
+  // This returns fresh page-level debug URLs that can be connected to directly.
+  const hostAppUrl = process.env.HOST_APP_URL;
+  const agentId = process.env.AGENT_ID;
+  if (hostAppUrl && agentId) {
+    try {
+      const debugRes = await fetch(`${hostAppUrl}/api/browser/debug-info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId }),
+      });
+      if (debugRes.ok) {
+        const debugInfo = await debugRes.json() as { pages?: Array<{ id: string; url: string; wsUrl: string }> };
+        const pages = debugInfo.pages || [];
+        if (pages.length > 0) {
+          const page = pages[pages.length - 1];
+          return { id: page.id, wsUrl: page.wsUrl, requiresSession: false };
+        }
+      }
+    } catch (err) {
+      console.error('[CDP] Debug info request failed:', err);
+    }
+  }
+
+  // Fallback: try CDP Target.getTargets over WebSocket (may not work for single-use URLs)
+  if (!browserState.cdpUrl) return null;
+  return findPageTargetViaCdp(browserState.cdpUrl);
+}
+
+/** Discover page targets via CDP WebSocket protocol (for remote providers) */
+function findPageTargetViaCdp(browserWsUrl: string): Promise<ActivePageTarget | null> {
+  return new Promise((resolve) => {
+    const ws = new WebSocket(browserWsUrl);
+    const timeout = setTimeout(() => { ws.close(); resolve(null); }, 5000);
+
+    ws.on('open', () => {
+      ws.send(JSON.stringify({ id: 1, method: 'Target.getTargets' }));
+    });
+
+    ws.on('message', (raw) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        if (msg.id === 1) {
+          clearTimeout(timeout);
+          ws.close();
+          const pages = (msg.result?.targetInfos || []).filter(
+            (t: { type: string }) => t.type === 'page'
+          );
+          if (pages.length === 0) { resolve(null); return; }
+          const target = pages[pages.length - 1];
+          resolve({ id: target.targetId, wsUrl: browserWsUrl, requiresSession: true });
+        }
+      } catch { /* wait for next message */ }
+    });
+
+    ws.on('error', () => { clearTimeout(timeout); resolve(null); });
+  });
+}
+
+/** Helper to build a CDP message, adding sessionId when in session mode */
+function cdpMsg(state: NonNullable<typeof cdpScreencast>, method: string, params?: Record<string, unknown>): string {
+  const msg: Record<string, unknown> = { id: ++state.msgId, method };
+  if (params) msg.params = params;
+  if (state.cdpSessionId) msg.sessionId = state.cdpSessionId;
+  return JSON.stringify(msg);
 }
 
 /** Connect CDP screencast to a page target and forward frames to the client */
-function connectCdpToTarget(targetId: string, wsUrl: string, clientWs: WebSocket) {
+function connectCdpToTarget(targetId: string, wsUrl: string, clientWs: WebSocket, requiresSession = false) {
   const cdpWs = new WebSocket(wsUrl);
-  cdpScreencast = { clientWs, cdpWs, currentTargetId: targetId, msgId: 0, lastDeviceWidth: 0, lastDeviceHeight: 0 };
+  cdpScreencast = { clientWs, cdpWs, currentTargetId: targetId, msgId: 0, lastDeviceWidth: 0, lastDeviceHeight: 0, cdpSessionId: null };
   const state = cdpScreencast;
 
   cdpWs.on('open', () => {
-    cdpWs.send(JSON.stringify({
-      id: ++state.msgId,
-      method: 'Page.startScreencast',
-      params: { format: 'jpeg', quality: 80, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1 },
-    }));
+    if (requiresSession) {
+      // Remote CDP: attach to target with flattened session first
+      cdpWs.send(JSON.stringify({
+        id: ++state.msgId,
+        method: 'Target.attachToTarget',
+        params: { targetId, flatten: true },
+      }));
+    } else {
+      // Local Chrome: page-level WebSocket, send screencast directly
+      cdpWs.send(cdpMsg(state, 'Page.startScreencast', {
+        format: 'jpeg', quality: 80, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1,
+      }));
+    }
   });
 
   cdpWs.on('message', (rawData) => {
     try {
       const msg = JSON.parse(rawData.toString());
-      if (msg.method === 'Page.screencastFrame') {
-        cdpWs.send(JSON.stringify({
-          id: ++state.msgId,
-          method: 'Page.screencastFrameAck',
-          params: { sessionId: msg.params.sessionId },
+
+      // Handle attachToTarget response — start screencast once we have a session
+      if (requiresSession && !state.cdpSessionId && msg.result?.sessionId) {
+        state.cdpSessionId = msg.result.sessionId;
+        cdpWs.send(cdpMsg(state, 'Page.startScreencast', {
+          format: 'jpeg', quality: 80, maxWidth: 1280, maxHeight: 720, everyNthFrame: 1,
         }));
+        return;
+      }
+
+      // In session mode, only handle messages for our session
+      if (state.cdpSessionId && msg.sessionId && msg.sessionId !== state.cdpSessionId) return;
+
+      if (msg.method === 'Page.screencastFrame') {
+        cdpWs.send(cdpMsg(state, 'Page.screencastFrameAck', { sessionId: msg.params.sessionId }));
         if (clientWs.readyState === WebSocket.OPEN) {
           // Send metadata when viewport dimensions change
           const meta = msg.params.metadata;
@@ -1480,7 +1581,7 @@ function connectCdpToTarget(targetId: string, wsUrl: string, clientWs: WebSocket
 function cleanupCdpScreencast() {
   if (!cdpScreencast) return;
   if (cdpScreencast.cdpWs.readyState === WebSocket.OPEN) {
-    cdpScreencast.cdpWs.send(JSON.stringify({ id: ++cdpScreencast.msgId, method: 'Page.stopScreencast' }));
+    cdpScreencast.cdpWs.send(cdpMsg(cdpScreencast, 'Page.stopScreencast'));
     cdpScreencast.cdpWs.close();
   }
   cdpScreencast = null;
@@ -1498,10 +1599,10 @@ function notifyBrowserAction() {
       console.log(`[CDP] Switching screencast to target ${target.id}`);
       // Stop old screencast and connect to the new target
       if (cdpScreencast.cdpWs.readyState === WebSocket.OPEN) {
-        cdpScreencast.cdpWs.send(JSON.stringify({ id: ++cdpScreencast.msgId, method: 'Page.stopScreencast' }));
+        cdpScreencast.cdpWs.send(cdpMsg(cdpScreencast, 'Page.stopScreencast'));
         cdpScreencast.cdpWs.close();
       }
-      connectCdpToTarget(target.id, target.wsUrl, currentClient);
+      connectCdpToTarget(target.id, target.wsUrl, currentClient, target.requiresSession);
     }).catch(err => console.error('[CDP] Recheck failed:', err));
   }, 300);
 }
@@ -1517,7 +1618,7 @@ function handleBrowserStreamConnection(ws: WebSocket) {
       ws.close();
       return;
     }
-    connectCdpToTarget(target.id, target.wsUrl, ws);
+    connectCdpToTarget(target.id, target.wsUrl, ws, target.requiresSession);
   }).catch((err) => {
     console.error('[CDP] Failed to start screencast:', err);
     ws.close();
@@ -1530,31 +1631,23 @@ function handleBrowserStreamConnection(ws: WebSocket) {
       if (!cdpScreencast || cdpScreencast.cdpWs.readyState !== WebSocket.OPEN) return;
 
       if (data.type === 'input_mouse') {
-        cdpScreencast.cdpWs.send(JSON.stringify({
-          id: ++cdpScreencast.msgId,
-          method: 'Input.dispatchMouseEvent',
-          params: {
-            type: data.eventType,
-            x: Math.round(data.x),
-            y: Math.round(data.y),
-            button: data.button,
-            clickCount: data.clickCount || 0,
-            deltaX: data.deltaX || 0,
-            deltaY: data.deltaY || 0,
-            modifiers: data.modifiers || 0,
-          },
+        cdpScreencast.cdpWs.send(cdpMsg(cdpScreencast, 'Input.dispatchMouseEvent', {
+          type: data.eventType,
+          x: Math.round(data.x),
+          y: Math.round(data.y),
+          button: data.button,
+          clickCount: data.clickCount || 0,
+          deltaX: data.deltaX || 0,
+          deltaY: data.deltaY || 0,
+          modifiers: data.modifiers || 0,
         }));
       } else if (data.type === 'input_keyboard') {
-        cdpScreencast.cdpWs.send(JSON.stringify({
-          id: ++cdpScreencast.msgId,
-          method: 'Input.dispatchKeyEvent',
-          params: {
-            type: data.eventType,
-            key: data.key,
-            code: data.code,
-            text: data.text,
-            modifiers: data.modifiers || 0,
-          },
+        cdpScreencast.cdpWs.send(cdpMsg(cdpScreencast, 'Input.dispatchKeyEvent', {
+          type: data.eventType,
+          key: data.key,
+          code: data.code,
+          text: data.text,
+          modifiers: data.modifiers || 0,
         }));
       }
     } catch { /* ignore */ }

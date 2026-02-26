@@ -4,7 +4,7 @@ import { EventSource } from 'eventsource'
 import { createTray, destroyTray, updateTrayWindow, setTrayVisible } from './tray'
 import { createAppMenu, updateAppMenuWindow, destroyAppMenu } from './app-menu'
 import { getSettings } from '@shared/lib/config/settings'
-import { hostBrowserManager } from './host-browser-manager'
+import { stopAllProviders, detectAllProviders } from './host-browser'
 import { registerUpdateHandlers, initAutoUpdater, updateAutoUpdaterWindow } from './auto-updater'
 
 // In dev mode, use a separate data directory to avoid mixing with production data.
@@ -166,7 +166,7 @@ ipcMain.handle('set-badge-count', (_event, count: number) => {
 
 // IPC handler for detecting host browser availability
 ipcMain.handle('detect-host-browser', () => {
-  return hostBrowserManager.detect()
+  return { providers: detectAllProviders() }
 })
 
 // IPC handler for setting native theme (controls vibrancy appearance on macOS)
@@ -392,7 +392,7 @@ async function gracefulShutdown() {
   destroyAppMenu()
 
   // Stop all host browser instances
-  hostBrowserManager.stopAll()
+  await stopAllProviders()
 
   // Stop the task scheduler, auto-sleep monitor, and status sync
   taskScheduler.stop()

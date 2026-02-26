@@ -390,9 +390,9 @@ class ContainerManager {
         envVars['REMOTE_MCPS'] = JSON.stringify(mcpConfigs)
       }
 
-      // Pass host browser env vars if enabled
+      // Pass host browser env vars if a host browser provider is selected
       const settings = getSettings()
-      if (settings.app?.useHostBrowser) {
+      if (settings.app?.hostBrowserProvider) {
         envVars['AGENT_BROWSER_USE_HOST'] = '1'
         envVars['HOST_APP_URL'] = `http://${hostUrl}:${appPort}`
         envVars['AGENT_ID'] = agentId

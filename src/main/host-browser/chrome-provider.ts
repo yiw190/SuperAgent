@@ -2,9 +2,9 @@ import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import net from 'net'
-import type { HostBrowserStatus } from '@shared/lib/config/settings'
-import { getDataDir } from '@shared/lib/config/data-dir'
-import { getChromeUserDataDir, listChromeProfiles, copyChromeProfileData } from '@shared/lib/browser/chrome-profile'
+import { getDataDir, getAgentWorkspaceDir } from '@shared/lib/config/data-dir'
+import { listChromeProfiles, copyChromeProfileData } from '@shared/lib/browser/chrome-profile'
+import type { HostBrowserProvider, HostBrowserProviderStatus, BrowserConnectionInfo } from './types'
 
 interface BrowserCandidate {
   browser: string
@@ -26,70 +26,69 @@ const BROWSER_CANDIDATES: Record<string, BrowserCandidate> = {
   },
 }
 
-interface AgentBrowserInstance {
+interface BrowserInstance {
   process: ChildProcess
   port: number
   userDataDir: string
   stoppingIntentionally: boolean
 }
 
-class HostBrowserManager {
-  private instances: Map<string, AgentBrowserInstance> = new Map()
+export class ChromeProvider implements HostBrowserProvider {
+  readonly id = 'chrome' as const
+  readonly name = 'Google Chrome'
+
+  private instances: Map<string, BrowserInstance> = new Map()
   private detectedPath: string | null = null
 
-  // Callback invoked when a specific agent's browser exits without stopAgent() being called
-  // (e.g. user closed Chrome manually). Receives the agentId of the affected instance.
-  onExternalExit: ((agentId: string) => void) | null = null
+  onExternalClose: ((instanceId: string) => void) | null = null
 
-  // Re-export for callers that need direct access
-  getChromeUserDataDir = getChromeUserDataDir
-
-  detect(): HostBrowserStatus {
+  detect(): HostBrowserProviderStatus {
     const candidate = BROWSER_CANDIDATES[process.platform]
     if (!candidate) {
-      return { available: false, browser: null, path: null }
+      return { id: this.id, name: this.name, available: false, reason: 'Unsupported platform' }
     }
 
     for (const p of candidate.paths) {
       if (fs.existsSync(p)) {
         this.detectedPath = p
         return {
+          id: this.id,
+          name: this.name,
           available: true,
-          browser: candidate.browser,
-          path: p,
           profiles: listChromeProfiles(),
         }
       }
     }
 
-    return { available: false, browser: null, path: null }
+    return { id: this.id, name: this.name, available: false, reason: 'Chrome not found on this system' }
   }
 
-  async ensureRunning(agentId: string, profileId?: string): Promise<{ port: number }> {
-    // Check if an instance already exists for this agent and its port is still open
-    const existing = this.instances.get(agentId)
+  async launch(instanceId: string, options?: Record<string, string>): Promise<BrowserConnectionInfo> {
+    // Check if an instance already exists and its port is still open
+    const existing = this.instances.get(instanceId)
     if (existing && await this.isPortOpen(existing.port)) {
       return { port: existing.port }
     }
 
     // If an instance exists but port is gone, clean up the stale entry
     if (existing) {
-      this.stopAgent(agentId)
+      await this.stop(instanceId)
     }
 
     const status = this.detect()
-    if (!status.available || !status.path) {
+    if (!status.available) {
       throw new Error('No supported browser detected')
     }
 
     const port = await this.findFreePort()
+    const profileId = options?.chromeProfileId
 
     // Chrome refuses to enable CDP on its default (real) data directory:
     //   "DevTools remote debugging requires a non-default data directory"
-    // So we always use a dedicated user-data-dir per agent. When a profile is
+    // So we always use a dedicated user-data-dir per instance. When a profile is
     // selected, we copy session data (cookies, login data, etc.) from the real
     // Chrome profile into our dedicated dir before launching.
-    const userDataDir = path.join(getDataDir(), 'host-browser-profiles', agentId)
+    const userDataDir = path.join(getDataDir(), 'host-browser-profiles', instanceId)
     fs.mkdirSync(userDataDir, { recursive: true })
 
     if (profileId) {
@@ -99,12 +98,12 @@ class HostBrowserManager {
       // agent accumulated during its browsing sessions.
       const alreadyHasProfile = fs.existsSync(path.join(destProfileDir, 'Cookies'))
       if (!alreadyHasProfile && copyChromeProfileData(profileId, destProfileDir)) {
-        console.log(`[HostBrowserManager] Copied Chrome profile "${profileId}" for agent ${agentId}`)
+        console.log(`[ChromeProvider] Copied Chrome profile "${profileId}" for instance ${instanceId}`)
       }
     }
 
     const browserProcess = spawn(
-      status.path,
+      this.detectedPath!,
       [
         `--remote-debugging-port=${port}`,
         '--remote-debugging-address=0.0.0.0',
@@ -115,26 +114,26 @@ class HostBrowserManager {
       { detached: false, stdio: 'ignore' }
     )
 
-    const instance: AgentBrowserInstance = {
+    const instance: BrowserInstance = {
       process: browserProcess,
       port,
       userDataDir,
       stoppingIntentionally: false,
     }
-    this.instances.set(agentId, instance)
+    this.instances.set(instanceId, instance)
 
     browserProcess.on('error', (err) => {
-      console.error(`[HostBrowserManager] Browser process error for agent ${agentId}:`, err)
+      console.error(`[ChromeProvider] Browser process error for instance ${instanceId}:`, err)
     })
 
     browserProcess.on('exit', (code) => {
-      console.log(`[HostBrowserManager] Browser for agent ${agentId} exited with code ${code}`)
+      console.log(`[ChromeProvider] Browser for instance ${instanceId} exited with code ${code}`)
       const wasIntentional = instance.stoppingIntentionally
-      this.instances.delete(agentId)
+      this.instances.delete(instanceId)
       if (!wasIntentional) {
-        console.log(`[HostBrowserManager] Browser for agent ${agentId} closed externally, notifying listeners`)
-        Promise.resolve(this.onExternalExit?.(agentId)).catch((err) => {
-          console.error('[HostBrowserManager] Error in onExternalExit callback:', err)
+        console.log(`[ChromeProvider] Browser for instance ${instanceId} closed externally, notifying listeners`)
+        Promise.resolve(this.onExternalClose?.(instanceId)).catch((err) => {
+          console.error('[ChromeProvider] Error in onExternalClose callback:', err)
         })
       }
     })
@@ -142,33 +141,32 @@ class HostBrowserManager {
     try {
       await this.waitForPort(port, 15000)
     } catch (err) {
-      this.stopAgent(agentId)
+      await this.stop(instanceId)
       throw err
     }
 
-    return { port }
+    const downloadDir = path.join(getAgentWorkspaceDir(instanceId), 'downloads')
+    return { port, downloadDir }
   }
 
-  stopAgent(agentId: string): void {
-    const instance = this.instances.get(agentId)
+  async stop(instanceId: string): Promise<void> {
+    const instance = this.instances.get(instanceId)
     if (instance && !instance.process.killed) {
-      // Set flag before kill — the exit event fires asynchronously after kill(),
-      // so we keep the flag set (it's reset in the exit handler after checking it)
       instance.stoppingIntentionally = true
       instance.process.kill()
     }
-    this.instances.delete(agentId)
+    this.instances.delete(instanceId)
   }
 
-  stopAll(): void {
-    for (const agentId of Array.from(this.instances.keys())) {
-      this.stopAgent(agentId)
+  async stopAll(): Promise<void> {
+    for (const instanceId of Array.from(this.instances.keys())) {
+      await this.stop(instanceId)
     }
   }
 
-  isRunning(agentId?: string): boolean {
-    if (agentId) {
-      const instance = this.instances.get(agentId)
+  isRunning(instanceId?: string): boolean {
+    if (instanceId) {
+      const instance = this.instances.get(instanceId)
       return instance !== undefined && !instance.process.killed
     }
     return this.instances.size > 0
@@ -215,5 +213,3 @@ class HostBrowserManager {
     throw new Error(`Browser debug port ${port} did not become available within ${timeoutMs}ms`)
   }
 }
-
-export const hostBrowserManager = new HostBrowserManager()

@@ -1,0 +1,206 @@
+import { getSettings } from '@shared/lib/config/settings'
+import type { HostBrowserProvider, HostBrowserProviderStatus, BrowserConnectionInfo, BrowserDebugInfo } from './types'
+
+const BROWSERBASE_API_BASE = 'https://api.browserbase.com/v1'
+
+interface BrowserbaseSession {
+  id: string
+  connectUrl: string
+  status: string
+  keepAlive: boolean
+}
+
+interface BrowserbaseDebugResponse {
+  wsUrl?: string
+  pages?: Array<{
+    id: string
+    url: string
+    debuggerUrl?: string
+    debuggerFullscreenUrl?: string
+  }>
+}
+
+export class BrowserbaseProvider implements HostBrowserProvider {
+  readonly id = 'browserbase' as const
+  readonly name = 'Browserbase'
+
+  /** Maps instanceId → Browserbase session ID */
+  private sessions: Map<string, string> = new Map()
+
+  onExternalClose: ((instanceId: string) => void) | null = null
+
+  detect(): HostBrowserProviderStatus {
+    const settings = getSettings()
+    const apiKey = settings.apiKeys?.browserbaseApiKey
+    const projectId = settings.apiKeys?.browserbaseProjectId
+
+    if (!apiKey || !projectId) {
+      return {
+        id: this.id,
+        name: this.name,
+        available: false,
+        reason: !apiKey ? 'API key not configured' : 'Project ID not configured',
+      }
+    }
+
+    return { id: this.id, name: this.name, available: true }
+  }
+
+  async launch(instanceId: string): Promise<BrowserConnectionInfo> {
+    const settings = getSettings()
+    const apiKey = settings.apiKeys?.browserbaseApiKey
+    const projectId = settings.apiKeys?.browserbaseProjectId
+
+    if (!apiKey || !projectId) {
+      throw new Error('Browserbase API key and project ID must be configured')
+    }
+
+    // If we already have a session for this instance, check if it's still running
+    const existingSessionId = this.sessions.get(instanceId)
+    if (existingSessionId) {
+      try {
+        const session = await this.fetchSession(existingSessionId, apiKey)
+        if (session.status === 'RUNNING') {
+          // Session alive — get a fresh debug browser URL for the CDP connection
+          const debugUrl = await this.getDebugBrowserUrl(existingSessionId, apiKey)
+          if (debugUrl) {
+            console.log(`[BrowserbaseProvider] Reusing session ${existingSessionId} for instance ${instanceId}`)
+            return { cdpUrl: debugUrl }
+          }
+        }
+      } catch {
+        // Session no longer valid
+      }
+      this.sessions.delete(instanceId)
+    }
+
+    // Create a new session with keepAlive so it survives agent-browser disconnecting
+    const response = await fetch(`${BROWSERBASE_API_BASE}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-BB-API-Key': apiKey,
+      },
+      body: JSON.stringify({ projectId, keepAlive: true }),
+    })
+
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(`Failed to create Browserbase session: ${response.status} ${body}`)
+    }
+
+    const session = await response.json() as BrowserbaseSession
+    this.sessions.set(instanceId, session.id)
+    console.log(`[BrowserbaseProvider] Created session ${session.id} for instance ${instanceId} (keepAlive: ${session.keepAlive})`)
+
+    // Use the debug browser URL as the CDP endpoint (supports multiple connections,
+    // unlike the connectUrl which is single-use)
+    const debugUrl = await this.getDebugBrowserUrl(session.id, apiKey)
+    if (debugUrl) {
+      return { cdpUrl: debugUrl }
+    }
+
+    // Fallback to connectUrl (single-use, but better than nothing)
+    return { cdpUrl: session.connectUrl }
+  }
+
+  async getDebugInfo(instanceId: string): Promise<BrowserDebugInfo | null> {
+    const sessionId = this.sessions.get(instanceId)
+    if (!sessionId) return null
+
+    const settings = getSettings()
+    const apiKey = settings.apiKeys?.browserbaseApiKey
+    if (!apiKey) return null
+
+    const response = await fetch(`${BROWSERBASE_API_BASE}/sessions/${sessionId}/debug`, {
+      headers: { 'X-BB-API-Key': apiKey },
+    })
+
+    if (!response.ok) {
+      console.error(`[BrowserbaseProvider] Debug endpoint returned ${response.status} for session ${sessionId}`)
+      return null
+    }
+
+    const debug = await response.json() as BrowserbaseDebugResponse
+    if (!debug.pages || debug.pages.length === 0) return null
+
+    // Build page-level debug WebSocket URLs
+    const pages = debug.pages.map((page) => ({
+      id: page.id,
+      url: page.url,
+      wsUrl: `wss://connect.browserbase.com/debug/${sessionId}/devtools/page/${page.id}`,
+    }))
+
+    return { pages }
+  }
+
+  async stop(instanceId: string): Promise<void> {
+    const sessionId = this.sessions.get(instanceId)
+    if (!sessionId) return
+
+    this.sessions.delete(instanceId)
+
+    const settings = getSettings()
+    const apiKey = settings.apiKeys?.browserbaseApiKey
+    const projectId = settings.apiKeys?.browserbaseProjectId
+    if (!apiKey || !projectId) return
+
+    try {
+      await fetch(`${BROWSERBASE_API_BASE}/sessions/${sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BB-API-Key': apiKey,
+        },
+        body: JSON.stringify({ projectId, status: 'REQUEST_RELEASE' }),
+      })
+      console.log(`[BrowserbaseProvider] Released session ${sessionId}`)
+    } catch (error) {
+      console.error(`[BrowserbaseProvider] Error releasing session ${sessionId}:`, error)
+    }
+  }
+
+  async stopAll(): Promise<void> {
+    const instanceIds = Array.from(this.sessions.keys())
+    await Promise.all(instanceIds.map((id) => this.stop(id)))
+  }
+
+  isRunning(instanceId?: string): boolean {
+    if (instanceId) {
+      return this.sessions.has(instanceId)
+    }
+    return this.sessions.size > 0
+  }
+
+  /** Get the debug browser-level WebSocket URL for a session */
+  private async getDebugBrowserUrl(sessionId: string, apiKey: string): Promise<string | null> {
+    try {
+      const response = await fetch(`${BROWSERBASE_API_BASE}/sessions/${sessionId}/debug`, {
+        headers: { 'X-BB-API-Key': apiKey },
+      })
+
+      if (!response.ok) {
+        console.error(`[BrowserbaseProvider] Debug endpoint returned ${response.status} for session ${sessionId}`)
+        return null
+      }
+
+      const debug = await response.json() as BrowserbaseDebugResponse
+      return debug.wsUrl || null
+    } catch (err) {
+      console.error('[BrowserbaseProvider] Failed to get debug URL:', err)
+      return null
+    }
+  }
+
+  private async fetchSession(sessionId: string, apiKey: string): Promise<BrowserbaseSession> {
+    const response = await fetch(`${BROWSERBASE_API_BASE}/sessions/${sessionId}`, {
+      headers: { 'X-BB-API-Key': apiKey },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to get session: ${response.status}`)
+    }
+
+    return response.json() as Promise<BrowserbaseSession>
+  }
+}

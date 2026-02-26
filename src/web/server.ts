@@ -4,7 +4,7 @@ import { Hono } from 'hono'
 import { existsSync } from 'fs'
 import api from '../api'
 import { containerManager } from '@shared/lib/container/container-manager'
-import { hostBrowserManager } from '../main/host-browser-manager'
+import { stopAllProviders } from '../main/host-browser'
 import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
 import { autoSleepMonitor } from '@shared/lib/scheduler/auto-sleep-monitor'
 import { findAvailablePort } from '../main/find-port'
@@ -33,7 +33,7 @@ async function gracefulShutdown(signal: string) {
   console.log(`\nReceived ${signal}, shutting down gracefully...`)
 
   // Stop all host browser instances
-  hostBrowserManager.stopAll()
+  await stopAllProviders()
 
   // Stop the task scheduler and auto-sleep monitor
   taskScheduler.stop()

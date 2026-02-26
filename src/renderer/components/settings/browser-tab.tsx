@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { Label } from '@renderer/components/ui/label'
+import { Input } from '@renderer/components/ui/input'
+import { Button } from '@renderer/components/ui/button'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import {
   Select,
   SelectContent,
@@ -7,8 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@renderer/components/ui/select'
-import { Switch } from '@renderer/components/ui/switch'
 import { useSettings, useUpdateSettings } from '@renderer/hooks/use-settings'
+import { apiFetch } from '@renderer/lib/api'
+import { AlertTriangle, Check, Loader2 } from 'lucide-react'
+import type { HostBrowserProviderId } from '@shared/lib/config/settings'
 
 const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5', label: 'Claude 4.5 Haiku' },
@@ -16,16 +21,27 @@ const MODEL_OPTIONS = [
   { value: 'claude-opus-4-6', label: 'Claude 4.6 Opus' },
 ]
 
+// Value used for "Container (built-in)" — no host browser provider
+const CONTAINER_VALUE = '__container__'
+
 export function BrowserTab() {
   const { data: settings, isLoading } = useSettings()
   const updateSettings = useUpdateSettings()
 
   // Optimistic local state
-  const [useHostBrowser, setUseHostBrowser] = useState<boolean | null>(null)
+  const [hostProvider, setHostProvider] = useState<string | null>(null)
   const [chromeProfileId, setChromeProfileId] = useState<string | null>(null)
+  const [browserbaseApiKey, setBrowserbaseApiKey] = useState('')
+  const [browserbaseProjectId, setBrowserbaseProjectId] = useState('')
+  const [isValidating, setIsValidating] = useState(false)
+  const [validationResult, setValidationResult] = useState<{ valid: boolean; error?: string } | null>(null)
 
-  const effectiveUseHostBrowser = useHostBrowser ?? settings?.app?.useHostBrowser ?? false
+  const effectiveProvider = hostProvider ?? settings?.app?.hostBrowserProvider ?? CONTAINER_VALUE
   const effectiveChromeProfileId = chromeProfileId ?? settings?.app?.chromeProfileId ?? ''
+
+  const providers = settings?.hostBrowserStatus?.providers ?? []
+  const chromeProvider = providers.find((p) => p.id === 'chrome')
+  const chromeProfiles = chromeProvider?.profiles ?? []
 
   return (
     <div className="space-y-6">
@@ -55,33 +71,49 @@ export function BrowserTab() {
         </p>
       </div>
 
-      {/* Use My Browser toggle */}
-      {settings?.hostBrowserStatus && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label htmlFor="use-host-browser">Use My Browser</Label>
-              <p className="text-xs text-muted-foreground">
-                {settings.hostBrowserStatus.available === false
-                  ? 'No supported browser detected on your system.'
-                  : 'Use your machine\'s browser instead of the built-in headless browser. Reduces bot detection.'}
-              </p>
-            </div>
-            <Switch
-              id="use-host-browser"
-              checked={effectiveUseHostBrowser}
-              onCheckedChange={(checked) => {
-                setUseHostBrowser(checked)
-                updateSettings.mutate({ app: { useHostBrowser: checked } })
-              }}
-              disabled={isLoading || !settings.hostBrowserStatus.available}
-            />
-          </div>
-        </div>
-      )}
+      {/* Browser Host selector */}
+      <div className="space-y-2">
+        <Label htmlFor="browser-host">Browser Host</Label>
+        <Select
+          value={effectiveProvider}
+          onValueChange={(value) => {
+            const providerId = value === CONTAINER_VALUE ? undefined : value as HostBrowserProviderId
+            setHostProvider(value)
+            updateSettings.mutate({
+              app: { hostBrowserProvider: providerId },
+            })
+          }}
+          disabled={isLoading}
+        >
+          <SelectTrigger id="browser-host">
+            <SelectValue placeholder="Select browser host" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={CONTAINER_VALUE}>
+              Container (built-in)
+            </SelectItem>
+            {providers.map((provider) => (
+              <SelectItem
+                key={provider.id}
+                value={provider.id}
+                disabled={!provider.available && provider.id === 'chrome'}
+              >
+                {provider.name}
+                {!provider.available && provider.id === 'chrome' && provider.reason
+                  ? ` (${provider.reason})`
+                  : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Choose where the browser runs. &quot;Container&quot; uses a built-in headless browser.
+          External hosts reduce bot detection and support persistent sessions.
+        </p>
+      </div>
 
-      {/* Chrome Profile selector */}
-      {settings?.hostBrowserStatus?.profiles && settings.hostBrowserStatus.profiles.length > 0 && (
+      {/* Chrome-specific: Profile selector */}
+      {effectiveProvider === 'chrome' && chromeProfiles.length > 0 && (
         <div className="space-y-2">
           <Label htmlFor="chrome-profile">Chrome Profile</Label>
           <Select
@@ -100,7 +132,7 @@ export function BrowserTab() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="__none__">None (clean profile)</SelectItem>
-              {settings.hostBrowserStatus.profiles.map((profile) => (
+              {chromeProfiles.map((profile) => (
                 <SelectItem key={profile.id} value={profile.id}>
                   {profile.name}
                 </SelectItem>
@@ -112,6 +144,180 @@ export function BrowserTab() {
           </p>
         </div>
       )}
+
+      {/* Browserbase-specific settings */}
+      {effectiveProvider === 'browserbase' && (
+        <BrowserbaseSettings
+          apiKey={browserbaseApiKey}
+          projectId={browserbaseProjectId}
+          onApiKeyChange={(v) => { setBrowserbaseApiKey(v); setValidationResult(null) }}
+          onProjectIdChange={(v) => { setBrowserbaseProjectId(v); setValidationResult(null) }}
+          isValidating={isValidating}
+          validationResult={validationResult}
+          hasSavedCredentials={
+            !!providers.find((p) => p.id === 'browserbase')?.available
+          }
+          disabled={isLoading}
+          onValidateAndSave={async () => {
+            if (!browserbaseApiKey.trim() || !browserbaseProjectId.trim()) return
+            setIsValidating(true)
+            setValidationResult(null)
+
+            try {
+              const res = await apiFetch('/api/settings/validate-browserbase', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  apiKey: browserbaseApiKey.trim(),
+                  projectId: browserbaseProjectId.trim(),
+                }),
+              })
+              const result = await res.json()
+              setValidationResult(result)
+
+              if (result.valid) {
+                await updateSettings.mutateAsync({
+                  apiKeys: {
+                    browserbaseApiKey: browserbaseApiKey.trim(),
+                    browserbaseProjectId: browserbaseProjectId.trim(),
+                  },
+                })
+                // Clear inputs so the button hides — saved state is shown via placeholder
+                setBrowserbaseApiKey('')
+                setBrowserbaseProjectId('')
+              }
+            } catch {
+              setValidationResult({ valid: false, error: 'Failed to validate credentials' })
+            } finally {
+              setIsValidating(false)
+            }
+          }}
+          onRemove={async () => {
+            setIsValidating(true)
+            try {
+              await updateSettings.mutateAsync({
+                apiKeys: {
+                  browserbaseApiKey: '',
+                  browserbaseProjectId: '',
+                },
+              })
+              setBrowserbaseApiKey('')
+              setBrowserbaseProjectId('')
+              setValidationResult(null)
+            } finally {
+              setIsValidating(false)
+            }
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+function BrowserbaseSettings({
+  apiKey,
+  projectId,
+  onApiKeyChange,
+  onProjectIdChange,
+  isValidating,
+  validationResult,
+  hasSavedCredentials,
+  disabled,
+  onValidateAndSave,
+  onRemove,
+}: {
+  apiKey: string
+  projectId: string
+  onApiKeyChange: (value: string) => void
+  onProjectIdChange: (value: string) => void
+  isValidating: boolean
+  validationResult: { valid: boolean; error?: string } | null
+  hasSavedCredentials: boolean
+  disabled: boolean
+  onValidateAndSave: () => void
+  onRemove: () => void
+}) {
+  const hasInput = apiKey.trim().length > 0 && projectId.trim().length > 0
+
+  return (
+    <div className="space-y-4">
+      {hasSavedCredentials && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-700 dark:text-green-400">
+            Credentials saved
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <Label htmlFor="browserbase-api-key">Browserbase API Key</Label>
+        <Input
+          id="browserbase-api-key"
+          type="password"
+          placeholder={hasSavedCredentials ? '••••••••••••••••' : 'Enter your Browserbase API key'}
+          value={apiKey}
+          onChange={(e) => onApiKeyChange(e.target.value)}
+          disabled={disabled || isValidating}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="browserbase-project-id">Browserbase Project ID</Label>
+        <Input
+          id="browserbase-project-id"
+          type="text"
+          placeholder={hasSavedCredentials ? '••••••••••••••••' : 'Enter your Browserbase project ID'}
+          value={projectId}
+          onChange={(e) => onProjectIdChange(e.target.value)}
+          disabled={disabled || isValidating}
+        />
+      </div>
+
+      {validationResult && (
+        <Alert variant={validationResult.valid ? 'default' : 'destructive'}>
+          {validationResult.valid ? (
+            <Check className="h-4 w-4" />
+          ) : (
+            <AlertTriangle className="h-4 w-4" />
+          )}
+          <AlertDescription>
+            {validationResult.valid
+              ? 'Credentials are valid and have been saved.'
+              : validationResult.error || 'Invalid credentials'}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {hasSavedCredentials
+          ? 'Your credentials are saved locally. Enter new values to replace them.'
+          : 'Get your API key and project ID from the Browserbase dashboard.'}
+      </p>
+
+      <div className="flex gap-2">
+        {hasInput && (
+          <Button size="sm" onClick={onValidateAndSave} disabled={isValidating}>
+            {isValidating ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Validating...
+              </>
+            ) : (
+              'Save & Validate'
+            )}
+          </Button>
+        )}
+        {hasSavedCredentials && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onRemove}
+            disabled={isValidating}
+          >
+            Remove Saved Credentials
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

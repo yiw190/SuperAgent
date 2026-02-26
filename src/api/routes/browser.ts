@@ -1,8 +1,6 @@
 import { Hono } from 'hono'
-import path from 'path'
-import { hostBrowserManager } from '../../main/host-browser-manager'
+import { getActiveProvider, setOnExternalClose } from '../../main/host-browser'
 import { getSettings } from '@shared/lib/config/settings'
-import { getAgentWorkspaceDir } from '@shared/lib/config/data-dir'
 import { containerManager } from '@shared/lib/container/container-manager'
 import { messagePersister } from '@shared/lib/container/message-persister'
 
@@ -15,11 +13,19 @@ browser.post('/launch-host-browser', async (c) => {
     // Fall back to 'default' for backward compat with containers that don't send agentId yet
     const agentId = body.agentId || 'default'
 
+    const provider = getActiveProvider()
+    if (!provider) {
+      return c.json({ error: 'No host browser provider configured' }, 400)
+    }
+
     const settings = getSettings()
-    const profileId = settings.app?.chromeProfileId || undefined
-    const { port } = await hostBrowserManager.ensureRunning(agentId, profileId)
-    const downloadDir = path.join(getAgentWorkspaceDir(agentId), 'downloads')
-    return c.json({ port, downloadDir })
+    const options: Record<string, string> = {}
+    if (settings.app?.chromeProfileId) {
+      options.chromeProfileId = settings.app.chromeProfileId
+    }
+
+    const connectionInfo = await provider.launch(agentId, options)
+    return c.json(connectionInfo)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to launch browser'
     console.error('[Browser] Failed to launch host browser:', message)
@@ -34,7 +40,10 @@ browser.post('/stop-host-browser', async (c) => {
     // Fall back to 'default' for backward compat with containers that don't send agentId yet
     const agentId = body.agentId || 'default'
 
-    hostBrowserManager.stopAgent(agentId)
+    const provider = getActiveProvider()
+    if (provider) {
+      await provider.stop(agentId)
+    }
     return c.json({ success: true })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to stop browser'
@@ -43,22 +52,42 @@ browser.post('/stop-host-browser', async (c) => {
   }
 })
 
-// When a specific agent's host browser exits externally (user closed Chrome),
+// POST /api/browser/debug-info - Get fresh debug/screencast connection info for an active browser session
+browser.post('/debug-info', async (c) => {
+  try {
+    const body = await c.req.json<{ agentId?: string }>().catch(() => ({} as { agentId?: string }))
+    const agentId = body.agentId || 'default'
+
+    const provider = getActiveProvider()
+    if (!provider?.getDebugInfo) {
+      return c.json({ pages: [] })
+    }
+
+    const debugInfo = await provider.getDebugInfo(agentId)
+    return c.json(debugInfo || { pages: [] })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to get debug info'
+    console.error('[Browser] Failed to get debug info:', message)
+    return c.json({ error: message }, 500)
+  }
+})
+
+// When a host browser instance closes externally (e.g. user closed Chrome),
 // notify that agent's container so it can clean up its internal state, and
 // broadcast to frontend SSE clients so the preview disappears.
-hostBrowserManager.onExternalExit = async (agentId: string) => {
-  console.log(`[Browser] Host browser for agent ${agentId} closed externally`)
+setOnExternalClose(async (instanceId: string) => {
+  console.log(`[Browser] Host browser for instance ${instanceId} closed externally`)
 
   // Broadcast to all frontend SSE clients with the agentSlug so UI can scope it
-  messagePersister.broadcastGlobal({ type: 'browser_active', active: false, agentSlug: agentId })
+  messagePersister.broadcastGlobal({ type: 'browser_active', active: false, agentSlug: instanceId })
 
   // Notify the affected container to clean up its internal browser state.
   try {
-    const client = containerManager.getClient(agentId)
+    const client = containerManager.getClient(instanceId)
     await client.fetch('/browser/notify-closed', { method: 'POST' })
   } catch {
     // Non-critical — frontend is already notified
   }
-}
+})
 
 export default browser

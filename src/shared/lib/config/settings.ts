@@ -17,6 +17,8 @@ export interface ApiKeySettings {
   anthropicApiKey?: string
   composioApiKey?: string
   composioUserId?: string
+  browserbaseApiKey?: string
+  browserbaseProjectId?: string
 }
 
 export interface NotificationSettings {
@@ -39,12 +41,16 @@ export interface AgentLimitsSettings {
   maxBudgetUsd?: number
 }
 
+export type HostBrowserProviderId = 'chrome' | 'browserbase'
+
 export interface AppPreferences {
   showMenuBarIcon?: boolean
   notifications?: NotificationSettings
   autoSleepTimeoutMinutes?: number
   setupCompleted?: boolean
+  /** @deprecated Use hostBrowserProvider instead */
   useHostBrowser?: boolean
+  hostBrowserProvider?: HostBrowserProviderId
   chromeProfileId?: string
   allowPrereleaseUpdates?: boolean
   theme?: 'system' | 'light' | 'dark'
@@ -73,11 +79,16 @@ export interface ApiKeyStatus {
 import type { RunnerAvailability } from '@shared/lib/container/client-factory'
 import type { RuntimeReadiness } from '@shared/lib/container/types'
 
-export interface HostBrowserStatus {
+export interface HostBrowserProviderInfo {
+  id: string
+  name: string
   available: boolean
-  browser: string | null
-  path: string | null
+  reason?: string
   profiles?: Array<{ id: string; name: string }>
+}
+
+export interface HostBrowserStatus {
+  providers: HostBrowserProviderInfo[]
 }
 
 export interface GlobalSettingsResponse {
@@ -150,6 +161,11 @@ export function loadSettings(): AppSettings {
         if (savedTag === 'main' || /^\d+\.\d+\.\d+/.test(savedTag!)) {
           agentImage = getDefaultAgentImage()
         }
+      }
+
+      // Migrate useHostBrowser → hostBrowserProvider
+      if (loaded.app?.useHostBrowser && !loaded.app?.hostBrowserProvider) {
+        loaded.app.hostBrowserProvider = 'chrome'
       }
 
       // Merge with defaults to ensure all fields exist

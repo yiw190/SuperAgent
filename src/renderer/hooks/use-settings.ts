@@ -30,6 +30,8 @@ export interface UpdateSettingsParams {
     anthropicApiKey?: string
     composioApiKey?: string
     composioUserId?: string
+    browserbaseApiKey?: string
+    browserbaseProjectId?: string
   }
   models?: Partial<ModelSettings>
   agentLimits?: Partial<AgentLimitsSettings>

@@ -17,7 +17,7 @@ import {
 } from '@shared/lib/config/settings'
 import { containerManager } from '@shared/lib/container/container-manager'
 import { checkAllRunnersAvailability, refreshRunnerAvailability, startRunner, SUPPORTED_RUNNERS, type ContainerRunner } from '@shared/lib/container/client-factory'
-import { hostBrowserManager } from '../../main/host-browser-manager'
+import { detectAllProviders } from '../../main/host-browser'
 import { db } from '@shared/lib/db'
 import { proxyAuditLog, proxyTokens, agentConnectedAccounts, scheduledTasks, notifications, connectedAccounts } from '@shared/lib/db/schema'
 import fs from 'fs'
@@ -48,7 +48,7 @@ settings.get('/', async (c) => {
       customEnvVars: getCustomEnvVars(),
       composioUserId: getComposioUserId(),
       setupCompleted: !!currentSettings.app?.setupCompleted,
-      hostBrowserStatus: hostBrowserManager.detect(),
+      hostBrowserStatus: { providers: detectAllProviders() },
       runtimeReadiness: containerManager.getReadiness(),
     }
 
@@ -160,6 +160,28 @@ settings.put('/', async (c) => {
         }
       }
 
+      // Handle Browserbase API key
+      if (body.apiKeys.browserbaseApiKey === '') {
+        newSettings.apiKeys = { ...newSettings.apiKeys }
+        delete newSettings.apiKeys.browserbaseApiKey
+      } else if (body.apiKeys.browserbaseApiKey) {
+        newSettings.apiKeys = {
+          ...newSettings.apiKeys,
+          browserbaseApiKey: body.apiKeys.browserbaseApiKey,
+        }
+      }
+
+      // Handle Browserbase Project ID
+      if (body.apiKeys.browserbaseProjectId === '') {
+        newSettings.apiKeys = { ...newSettings.apiKeys }
+        delete newSettings.apiKeys.browserbaseProjectId
+      } else if (body.apiKeys.browserbaseProjectId) {
+        newSettings.apiKeys = {
+          ...newSettings.apiKeys,
+          browserbaseProjectId: body.apiKeys.browserbaseProjectId,
+        }
+      }
+
       // Clean up empty object
       if (
         newSettings.apiKeys &&
@@ -206,7 +228,7 @@ settings.put('/', async (c) => {
       customEnvVars: getCustomEnvVars(),
       composioUserId: getComposioUserId(),
       setupCompleted: !!newSettings.app?.setupCompleted,
-      hostBrowserStatus: hostBrowserManager.detect(),
+      hostBrowserStatus: { providers: detectAllProviders() },
       runtimeReadiness: containerManager.getReadiness(),
     })
   } catch (error) {
@@ -284,6 +306,59 @@ settings.post('/validate-anthropic-key', async (c) => {
     return c.json({ valid: true })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Invalid API key'
+    return c.json({ valid: false, error: message })
+  }
+})
+
+// POST /api/settings/validate-browserbase - Validate Browserbase API key and project ID
+settings.post('/validate-browserbase', async (c) => {
+  try {
+    const { apiKey, projectId } = await c.req.json()
+    if (!apiKey || typeof apiKey !== 'string') {
+      return c.json({ valid: false, error: 'API key is required' }, 400)
+    }
+    if (!projectId || typeof projectId !== 'string') {
+      return c.json({ valid: false, error: 'Project ID is required' }, 400)
+    }
+
+    // Create a test session to validate credentials
+    const response = await fetch('https://api.browserbase.com/v1/sessions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-BB-API-Key': apiKey,
+      },
+      body: JSON.stringify({ projectId }),
+    })
+
+    if (!response.ok) {
+      const body = await response.text()
+      if (response.status === 401 || response.status === 403) {
+        return c.json({ valid: false, error: 'Invalid API key' })
+      }
+      if (response.status === 404 || response.status === 400) {
+        return c.json({ valid: false, error: 'Invalid project ID' })
+      }
+      return c.json({ valid: false, error: `Browserbase error: ${response.status} ${body}` })
+    }
+
+    const session = await response.json() as { id: string }
+
+    // Release the test session immediately
+    await fetch(`https://api.browserbase.com/v1/sessions/${session.id}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-BB-API-Key': apiKey,
+      },
+      body: JSON.stringify({ projectId, status: 'REQUEST_RELEASE' }),
+    }).catch(() => {
+      // Non-critical — session will timeout on its own
+    })
+
+    return c.json({ valid: true })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Validation failed'
     return c.json({ valid: false, error: message })
   }
 })
