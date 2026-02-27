@@ -12,8 +12,11 @@ import {
   resetScheduledTask,
 } from '@shared/lib/services/scheduled-task-service'
 import { getSessionsByScheduledTask } from '@shared/lib/services/session-service'
+import { Authenticated } from '../middleware/auth'
 
 const scheduledTasksRouter = new Hono()
+
+scheduledTasksRouter.use('*', Authenticated())
 
 // GET /api/scheduled-tasks/:taskId - Get a single scheduled task
 scheduledTasksRouter.get('/:taskId', async (c) => {

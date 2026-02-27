@@ -13,6 +13,7 @@ import skillsets from './routes/skillsets'
 import usage from './routes/usage'
 import remoteMcps from './routes/remote-mcps'
 import { initializeServices } from '@shared/lib/startup'
+import { isAuthMode } from '@shared/lib/auth/mode'
 
 const app = new Hono()
 
@@ -26,6 +27,14 @@ if (process.type !== 'browser') {
 
 // Enable CORS for all routes
 app.use('*', cors())
+
+// Mount Better Auth handler (only when AUTH_MODE is enabled)
+if (isAuthMode()) {
+  app.on(['POST', 'GET'], '/api/auth/*', async (c) => {
+    const { getAuth } = await import('@shared/lib/auth/index')
+    return getAuth().handler(c.req.raw)
+  })
+}
 
 // Mount route handlers
 app.route('/api/agents', agents)

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import Anthropic from '@anthropic-ai/sdk'
 import { getDataDir, getAgentsDataDir } from '@shared/lib/config/data-dir'
+import { Authenticated, IsAdmin } from '../middleware/auth'
 import {
   getSettings,
   updateSettings,
@@ -23,6 +24,8 @@ import { proxyAuditLog, proxyTokens, agentConnectedAccounts, scheduledTasks, not
 import fs from 'fs'
 
 const settings = new Hono()
+
+settings.use('*', Authenticated(), IsAdmin())
 
 // GET /api/settings - Get global settings
 settings.get('/', async (c) => {

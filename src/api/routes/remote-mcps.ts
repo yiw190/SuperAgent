@@ -6,8 +6,11 @@ import { eq } from 'drizzle-orm'
 import { initiateOAuthFlow, initiateNewServerOAuth, completeOAuthFlow, discoverOAuthMetadata } from '@shared/lib/mcp/oauth'
 import type { McpToolInfo } from '@shared/lib/mcp/types'
 import { getAppBaseUrlFromRequest } from '@shared/lib/auth/config'
+import { Authenticated, UsersMcpServer, IsAdmin, Or } from '../middleware/auth'
 
 const remoteMcps = new Hono()
+
+remoteMcps.use('*', Authenticated())
 
 /**
  * Parse an MCP response that may be JSON or SSE (text/event-stream).
@@ -305,7 +308,7 @@ remoteMcps.get('/oauth-callback', async (c) => {
 })
 
 // Get a single MCP server
-remoteMcps.get('/:id', async (c) => {
+remoteMcps.get('/:id', Or(UsersMcpServer(), IsAdmin()), async (c) => {
   const id = c.req.param('id')
   const [server] = await db
     .select()
@@ -329,7 +332,7 @@ remoteMcps.get('/:id', async (c) => {
 })
 
 // Update an MCP server
-remoteMcps.patch('/:id', async (c) => {
+remoteMcps.patch('/:id', Or(UsersMcpServer(), IsAdmin()), async (c) => {
   const id = c.req.param('id')
   const body = await c.req.json<{
     name?: string
@@ -379,7 +382,7 @@ remoteMcps.patch('/:id', async (c) => {
 })
 
 // Delete an MCP server
-remoteMcps.delete('/:id', async (c) => {
+remoteMcps.delete('/:id', Or(UsersMcpServer(), IsAdmin()), async (c) => {
   const id = c.req.param('id')
 
   const [existing] = await db
@@ -397,7 +400,7 @@ remoteMcps.delete('/:id', async (c) => {
 })
 
 // Discover tools from an MCP server
-remoteMcps.post('/:id/discover-tools', async (c) => {
+remoteMcps.post('/:id/discover-tools', Or(UsersMcpServer(), IsAdmin()), async (c) => {
   const id = c.req.param('id')
 
   const [server] = await db
@@ -442,7 +445,7 @@ remoteMcps.post('/:id/discover-tools', async (c) => {
 })
 
 // Test connection to an MCP server
-remoteMcps.post('/:id/test-connection', async (c) => {
+remoteMcps.post('/:id/test-connection', Or(UsersMcpServer(), IsAdmin()), async (c) => {
   const id = c.req.param('id')
 
   const [server] = await db

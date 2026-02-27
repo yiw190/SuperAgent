@@ -15,8 +15,11 @@ import {
   deleteNotification,
 } from '@shared/lib/services/notification-service'
 import { messagePersister } from '@shared/lib/container/message-persister'
+import { Authenticated, UsersNotification } from '../middleware/auth'
 
 const notificationsRouter = new Hono()
+
+notificationsRouter.use('*', Authenticated())
 
 // GET /api/notifications/stream - SSE stream for global notifications (used by Electron main process)
 notificationsRouter.get('/stream', async (c) => {
@@ -90,7 +93,7 @@ notificationsRouter.get('/unread-count', async (c) => {
 })
 
 // POST /api/notifications/:id/read - Mark a notification as read
-notificationsRouter.post('/:id/read', async (c) => {
+notificationsRouter.post('/:id/read', UsersNotification(), async (c) => {
   try {
     const notificationId = c.req.param('id')
     const success = await markAsRead(notificationId)
@@ -130,7 +133,7 @@ notificationsRouter.post('/read-by-session/:sessionId', async (c) => {
 })
 
 // DELETE /api/notifications/:id - Delete a notification
-notificationsRouter.delete('/:id', async (c) => {
+notificationsRouter.delete('/:id', UsersNotification(), async (c) => {
   try {
     const notificationId = c.req.param('id')
     const success = await deleteNotification(notificationId)

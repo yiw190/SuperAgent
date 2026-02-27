@@ -3,8 +3,11 @@ import { listAgents } from '@shared/lib/services/agent-service'
 import { getAgentClaudeConfigDir } from '@shared/lib/utils/file-storage'
 import { subDays, format, addDays } from 'date-fns'
 import type { DailyUsageEntry, UsageResponse } from '@shared/lib/types/usage'
+import { Authenticated } from '../middleware/auth'
 
 const usage = new Hono()
+
+usage.use('*', Authenticated())
 
 usage.get('/', async (c) => {
   const daysParam = c.req.query('days')

@@ -3,6 +3,7 @@ import { getActiveProvider, setOnExternalClose } from '../../main/host-browser'
 import { getSettings } from '@shared/lib/config/settings'
 import { containerManager } from '@shared/lib/container/container-manager'
 import { messagePersister } from '@shared/lib/container/message-persister'
+import { Authenticated, IsAdmin } from '../middleware/auth'
 
 const browser = new Hono()
 
@@ -34,7 +35,7 @@ browser.post('/launch-host-browser', async (c) => {
 })
 
 // POST /api/browser/stop-host-browser - Stop the host browser process for a specific agent
-browser.post('/stop-host-browser', async (c) => {
+browser.post('/stop-host-browser', Authenticated(), IsAdmin(), async (c) => {
   try {
     const body = await c.req.json<{ agentId?: string }>().catch(() => ({} as { agentId?: string }))
     // Fall back to 'default' for backward compat with containers that don't send agentId yet

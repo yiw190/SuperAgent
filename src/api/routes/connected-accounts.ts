@@ -11,8 +11,11 @@ import {
   getAccountDisplayName,
 } from '@shared/lib/composio/client'
 import { getAppBaseUrlFromRequest } from '@shared/lib/auth/config'
+import { Authenticated, OwnsAccount, IsAdmin, Or } from '../middleware/auth'
 
 const connectedAccountsRouter = new Hono()
+
+connectedAccountsRouter.use('*', Authenticated())
 
 // GET /api/connected-accounts - List all app-level connected accounts
 connectedAccountsRouter.get('/', async (c) => {
@@ -290,7 +293,7 @@ connectedAccountsRouter.get('/callback', async (c) => {
 })
 
 // PATCH /api/connected-accounts/:id - Update a connected account (rename)
-connectedAccountsRouter.patch('/:id', async (c) => {
+connectedAccountsRouter.patch('/:id', Or(OwnsAccount(), IsAdmin()), async (c) => {
   try {
     const id = c.req.param('id')
     const body = await c.req.json()
@@ -331,7 +334,7 @@ connectedAccountsRouter.patch('/:id', async (c) => {
 })
 
 // DELETE /api/connected-accounts/:id - Delete a connected account
-connectedAccountsRouter.delete('/:id', async (c) => {
+connectedAccountsRouter.delete('/:id', Or(OwnsAccount(), IsAdmin()), async (c) => {
   try {
     const id = c.req.param('id')
 
