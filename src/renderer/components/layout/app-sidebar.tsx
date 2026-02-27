@@ -1,5 +1,5 @@
 
-import { ChevronRight, Plus, Settings, AlertTriangle, Clock, LayoutDashboard, Loader2, WifiOff } from 'lucide-react'
+import { ChevronRight, Plus, Settings, AlertTriangle, Clock, LayoutDashboard, Loader2, WifiOff, LogOut, User } from 'lucide-react'
 import { ErrorBoundary } from '@renderer/components/ui/error-boundary'
 import { useState, useEffect, useRef } from 'react'
 import { isElectron, getPlatform } from '@renderer/lib/env'
@@ -43,6 +43,8 @@ import { useScheduledTasks, type ApiScheduledTask } from '@renderer/hooks/use-sc
 import { useArtifacts, type ArtifactInfo } from '@renderer/hooks/use-artifacts'
 import { GlobalSettingsDialog } from '@renderer/components/settings/global-settings-dialog'
 import { ContainerSetupDialog } from '@renderer/components/settings/container-setup-dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@renderer/components/ui/popover'
+import { useUser } from '@renderer/context/user-context'
 import { NotificationBell } from '@renderer/components/notifications/notification-bell'
 import { useIsOnline } from '@renderer/context/connectivity-context'
 
@@ -261,6 +263,41 @@ function AgentMenuItem({ agent }: { agent: ApiAgent }) {
   )
 }
 
+function UserFooter() {
+  const { isAuthMode, user, signOut } = useUser()
+
+  if (!isAuthMode || !user) {
+    return (
+      <div className="px-2 text-xs text-muted-foreground">
+        Version: {__APP_VERSION__}
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-2 flex items-center justify-between">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <User className="h-3 w-3" />
+            <span className="truncate max-w-[140px]">{user.name}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-48 p-1">
+          <button
+            onClick={signOut}
+            className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded-sm hover:bg-accent transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
+        </PopoverContent>
+      </Popover>
+      <span className="text-xs text-muted-foreground">v{__APP_VERSION__}</span>
+    </div>
+  )
+}
+
 export function AppSidebar() {
   const { settingsOpen, setSettingsOpen, settingsTab, createAgentOpen, setCreateAgentOpen, openWizard } = useDialogs()
   const { clearSelection } = useSelection()
@@ -411,9 +448,7 @@ export function AppSidebar() {
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
-        <div className="px-2 text-xs text-muted-foreground">
-          Version: {__APP_VERSION__}
-        </div>
+        <UserFooter />
       </SidebarFooter>
 
       <CreateAgentDialog

@@ -40,7 +40,14 @@ export function getAuth() {
       ],
       secret: getOrCreateAuthSecret(),
       baseURL: getAppBaseUrl(),
-      ...(trustedOrigins.length > 0 ? { trustedOrigins } : {}),
+      // When trustedOrigins is explicitly configured, use that list.
+      // Otherwise allow all origins (matches spec: "Default: allow all origins").
+      trustedOrigins: trustedOrigins.length > 0
+        ? trustedOrigins
+        : (request) => {
+            const origin = request?.headers.get('origin')
+            return origin ? [origin] : []
+          },
       databaseHooks: {
         user: {
           create: {
