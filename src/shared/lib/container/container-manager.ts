@@ -380,12 +380,19 @@ class ContainerManager {
 
       const mcpConfigs = mcpMappings
         .filter(({ mcp }) => mcp.status === 'active')
-        .map(({ mcp }) => ({
-          id: mcp.id,
-          name: mcp.name,
-          proxyUrl: `http://${hostUrl}:${appPort}/api/mcp-proxy/${agentId}/${mcp.id}`,
-          tools: mcp.toolsJson ? (() => { try { return JSON.parse(mcp.toolsJson) } catch { return [] } })() : [],
-        }))
+        .map(({ mcp }) => {
+          // Only pass tool names (not full schemas) to keep env var size small
+          let toolNames: Array<{ name: string }> = []
+          if (mcp.toolsJson) {
+            try { toolNames = JSON.parse(mcp.toolsJson).map((t: any) => ({ name: t.name })) } catch { /* ignore */ }
+          }
+          return {
+            id: mcp.id,
+            name: mcp.name,
+            proxyUrl: `http://${hostUrl}:${appPort}/api/mcp-proxy/${agentId}/${mcp.id}`,
+            tools: toolNames,
+          }
+        })
 
       if (mcpConfigs.length > 0) {
         envVars['REMOTE_MCPS'] = JSON.stringify(mcpConfigs)
