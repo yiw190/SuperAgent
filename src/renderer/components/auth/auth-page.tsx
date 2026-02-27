@@ -1,4 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import { signIn, signUp } from '@renderer/lib/auth-client'
 import { Card, CardContent, CardHeader } from '@renderer/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
@@ -8,43 +11,67 @@ import { Label } from '@renderer/components/ui/label'
 import { Alert, AlertDescription } from '@renderer/components/ui/alert'
 import { Loader2 } from 'lucide-react'
 
+// --- Schemas ---
+
+const signInSchema = z.object({
+  email: z.email('Please enter a valid email address'),
+  password: z.string().min(1, 'Password is required'),
+})
+
+const signUpSchema = z
+  .object({
+    name: z.string().min(1, 'Name is required'),
+    email: z.email('Please enter a valid email address'),
+    password: z.string().min(8, 'Password must be at least 8 characters'),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  })
+
+type SignInValues = z.infer<typeof signInSchema>
+type SignUpValues = z.infer<typeof signUpSchema>
+
+// --- Components ---
+
 function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => void }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  const canSubmit = email.trim() && password
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignInValues>({
+    resolver: zodResolver(signInSchema),
+  })
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
+  async function onSubmit(data: SignInValues) {
+    setServerError(null)
     try {
-      const result = await signIn.email({ email: email.trim(), password })
-      if (result.error) {
-        setError(result.error.message || 'Sign in failed')
+      const res = await signIn.email({ email: data.email, password: data.password })
+      if (res.error) {
+        setServerError(res.error.message || 'Sign in failed')
       }
     } catch {
-      setError('Sign in failed. Please try again.')
-    } finally {
-      setLoading(false)
+      setServerError('Sign in failed. Please try again.')
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="signin-email">Email</Label>
         <Input
           id="signin-email"
           type="email"
           placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           autoFocus
+          className={errors.email ? 'border-destructive' : ''}
+          {...register('email')}
         />
+        {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
       </div>
 
       <div className="space-y-2">
@@ -53,20 +80,21 @@ function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => void }) {
           id="signin-password"
           type="password"
           placeholder="Enter your password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
+          className={errors.password ? 'border-destructive' : ''}
+          {...register('password')}
         />
+        {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
       </div>
 
-      {error && (
+      {serverError && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{serverError}</AlertDescription>
         </Alert>
       )}
 
-      <Button type="submit" className="w-full" disabled={!canSubmit || loading}>
-        {loading ? (
+      <Button type="submit" className="w-full" disabled={isSubmitting}>
+        {isSubmitting ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             Signing in...
@@ -87,51 +115,46 @@ function SignInForm({ onSwitchToSignUp }: { onSwitchToSignUp: () => void }) {
 }
 
 function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [serverError, setServerError] = useState<string | null>(null)
 
-  const passwordMismatch = confirmPassword && password !== confirmPassword
-  const canSubmit = name.trim() && email.trim() && password.length >= 8 && password === confirmPassword
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignUpValues>({
+    resolver: zodResolver(signUpSchema),
+  })
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-
-    setLoading(true)
+  async function onSubmit(data: SignUpValues) {
+    setServerError(null)
     try {
-      const result = await signUp.email({ name: name.trim(), email: email.trim(), password })
-      if (result.error) {
-        setError(result.error.message || 'Sign up failed')
+      const res = await signUp.email({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      })
+      if (res.error) {
+        setServerError(res.error.message || 'Sign up failed')
       }
     } catch {
-      setError('Sign up failed. Please try again.')
-    } finally {
-      setLoading(false)
+      setServerError('Sign up failed. Please try again.')
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="signup-name">Name</Label>
         <Input
           id="signup-name"
           type="text"
           placeholder="Your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
           autoComplete="name"
           autoFocus
+          className={errors.name ? 'border-destructive' : ''}
+          {...register('name')}
         />
+        {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
       </div>
 
       <div className="space-y-2">
@@ -140,10 +163,11 @@ function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
           id="signup-email"
           type="email"
           placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
+          className={errors.email ? 'border-destructive' : ''}
+          {...register('email')}
         />
+        {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
       </div>
 
       <div className="space-y-2">
@@ -152,10 +176,11 @@ function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
           id="signup-password"
           type="password"
           placeholder="At least 8 characters"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
+          className={errors.password ? 'border-destructive' : ''}
+          {...register('password')}
         />
+        {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
       </div>
 
       <div className="space-y-2">
@@ -164,24 +189,21 @@ function SignUpForm({ onSwitchToSignIn }: { onSwitchToSignIn: () => void }) {
           id="signup-confirm"
           type="password"
           placeholder="Re-enter your password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
           autoComplete="new-password"
-          className={passwordMismatch ? 'border-destructive' : ''}
+          className={errors.confirmPassword ? 'border-destructive' : ''}
+          {...register('confirmPassword')}
         />
-        {passwordMismatch && (
-          <p className="text-xs text-destructive">Passwords do not match</p>
-        )}
+        {errors.confirmPassword && <p className="text-xs text-destructive">{errors.confirmPassword.message}</p>}
       </div>
 
-      {error && (
+      {serverError && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{serverError}</AlertDescription>
         </Alert>
       )}
 
-      <Button type="submit" className="w-full" disabled={!canSubmit || loading}>
-        {loading ? (
+      <Button type="submit" className="w-full" disabled={isSubmitting}>
+        {isSubmitting ? (
           <>
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             Creating account...
