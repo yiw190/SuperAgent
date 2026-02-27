@@ -130,7 +130,8 @@
         "to": "tray-icons",
         "filter": [
           "tray*",
-          "status_*"
+          "status_*",
+          "icon*"
         ]
       }
     ],
@@ -147,14 +148,25 @@
     },
     "win": {
       "target": [
-        "nsis",
-        "zip"
+        {
+          "target": "nsis",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
       ],
       "icon": "build/icon.png"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Superagent",
+      "uninstallDisplayName": "Superagent"
     },
     "publish": {
       "provider": "github",
