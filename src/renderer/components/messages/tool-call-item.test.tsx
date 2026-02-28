@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ToolCallItem, StreamingToolCallItem } from './tool-call-item'
+import { formatToolName } from './tool-call-item'
 import { createToolCall } from '@renderer/test/factories'
 
 // Mock getToolRenderer to return null (generic display)
@@ -23,6 +24,41 @@ vi.mock('@renderer/hooks/use-elapsed-timer', () => ({
   useElapsedTimer: (startTime: unknown) => (startTime ? '5s' : null),
   formatElapsed: (ms: number) => `${Math.floor(ms / 1000)}s`,
 }))
+
+describe('formatToolName', () => {
+  it('formats standard mcp tool names', () => {
+    expect(formatToolName('mcp__granola__list_meetings')).toBe('Granola MCP: List Meetings')
+  })
+
+  it('handles hyphenated server names', () => {
+    expect(formatToolName('mcp__user-input__request_secret')).toBe('User Input MCP: Request Secret')
+  })
+
+  it('handles server names with underscores', () => {
+    expect(formatToolName('mcp__google_sheets__read_range')).toBe('Google Sheets MCP: Read Range')
+  })
+
+  it('handles camelCase tool names', () => {
+    expect(formatToolName('mcp__ide__getDiagnostics')).toBe('Ide MCP: Get Diagnostics')
+    expect(formatToolName('mcp__ide__executeCode')).toBe('Ide MCP: Execute Code')
+  })
+
+  it('returns non-mcp names unchanged', () => {
+    expect(formatToolName('Bash')).toBe('Bash')
+    expect(formatToolName('WebSearch')).toBe('WebSearch')
+    expect(formatToolName('Read')).toBe('Read')
+  })
+
+  it('returns names without double-underscore structure unchanged', () => {
+    expect(formatToolName('mcp_single_underscores')).toBe('mcp_single_underscores')
+    expect(formatToolName('some_random_name')).toBe('some_random_name')
+  })
+
+  it('handles tool names with double underscores in the tool part', () => {
+    // server matched lazily, rest goes to tool; consecutive underscores collapse to one space
+    expect(formatToolName('mcp__server__do__something')).toBe('Server MCP: Do Something')
+  })
+})
 
 describe('ToolCallItem', () => {
   describe('status display', () => {
