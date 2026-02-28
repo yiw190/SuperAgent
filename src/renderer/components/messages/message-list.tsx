@@ -179,16 +179,30 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
     return { secretRequests, connectedAccountRequests, questionRequests, fileRequests, remoteMcpRequests }
   }, [messages, pendingUserMessage])
 
+  // Track toolUseIds the user has already answered, so that the message-based
+  // recovery source doesn't re-surface them before the tool result is persisted.
+  // Cleared when the session goes idle (all tool calls will have results by then).
+  const dismissedRequestIds = useRef(new Set<string>())
+
+  // Clear dismissed set when session becomes idle
+  const prevIsActive = useRef(isActive)
+  if (prevIsActive.current && !isActive) {
+    dismissedRequestIds.current.clear()
+  }
+  prevIsActive.current = isActive
+
   // Merge SSE-based and message-based pending requests (dedupe by toolUseId)
   // Only include message-based requests when session is active (for page refresh recovery)
   // When session is idle, message-based requests represent interrupted/completed work
+  // Filter out dismissed requests so they don't re-surface from the message-based source
+  // before the tool result is persisted (race condition with parallel tool calls).
   const pendingSecretRequests = useMemo(() => {
     const seen = new Set<string>()
     const merged: { toolUseId: string; secretName: string; reason?: string }[] = []
 
     const messageBased = isActive ? messagesBasedPendingRequests.secretRequests : []
     for (const req of [...sseSecretRequests, ...messageBased]) {
-      if (!seen.has(req.toolUseId)) {
+      if (!seen.has(req.toolUseId) && !dismissedRequestIds.current.has(req.toolUseId)) {
         seen.add(req.toolUseId)
         merged.push(req)
       }
@@ -202,7 +216,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
 
     const messageBased = isActive ? messagesBasedPendingRequests.connectedAccountRequests : []
     for (const req of [...sseConnectedAccountRequests, ...messageBased]) {
-      if (!seen.has(req.toolUseId)) {
+      if (!seen.has(req.toolUseId) && !dismissedRequestIds.current.has(req.toolUseId)) {
         seen.add(req.toolUseId)
         merged.push(req)
       }
@@ -224,7 +238,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
 
     const messageBased = isActive ? messagesBasedPendingRequests.questionRequests : []
     for (const req of [...sseQuestionRequests, ...messageBased]) {
-      if (!seen.has(req.toolUseId)) {
+      if (!seen.has(req.toolUseId) && !dismissedRequestIds.current.has(req.toolUseId)) {
         seen.add(req.toolUseId)
         merged.push(req)
       }
@@ -238,7 +252,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
 
     const messageBased = isActive ? messagesBasedPendingRequests.fileRequests : []
     for (const req of [...sseFileRequests, ...messageBased]) {
-      if (!seen.has(req.toolUseId)) {
+      if (!seen.has(req.toolUseId) && !dismissedRequestIds.current.has(req.toolUseId)) {
         seen.add(req.toolUseId)
         merged.push(req)
       }
@@ -252,7 +266,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
 
     const messageBased = isActive ? messagesBasedPendingRequests.remoteMcpRequests : []
     for (const req of [...sseRemoteMcpRequests, ...messageBased]) {
-      if (!seen.has(req.toolUseId)) {
+      if (!seen.has(req.toolUseId) && !dismissedRequestIds.current.has(req.toolUseId)) {
         seen.add(req.toolUseId)
         merged.push(req)
       }
@@ -292,6 +306,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
   // Handler to remove a completed secret request
   const handleSecretRequestComplete = useCallback(
     (toolUseId: string) => {
+      dismissedRequestIds.current.add(toolUseId)
       removeSecretRequest(sessionId, toolUseId)
     },
     [sessionId]
@@ -300,6 +315,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
   // Handler to remove a completed connected account request
   const handleConnectedAccountRequestComplete = useCallback(
     (toolUseId: string) => {
+      dismissedRequestIds.current.add(toolUseId)
       removeConnectedAccountRequest(sessionId, toolUseId)
     },
     [sessionId]
@@ -308,6 +324,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
   // Handler to remove a completed question request
   const handleQuestionRequestComplete = useCallback(
     (toolUseId: string) => {
+      dismissedRequestIds.current.add(toolUseId)
       removeQuestionRequest(sessionId, toolUseId)
     },
     [sessionId]
@@ -316,6 +333,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
   // Handler to remove a completed remote MCP request
   const handleRemoteMcpRequestComplete = useCallback(
     (toolUseId: string) => {
+      dismissedRequestIds.current.add(toolUseId)
       removeRemoteMcpRequest(sessionId, toolUseId)
     },
     [sessionId]
@@ -324,6 +342,7 @@ export function MessageList({ sessionId, agentSlug, pendingUserMessage, onPendin
   // Handler to remove a completed file request
   const handleFileRequestComplete = useCallback(
     (toolUseId: string) => {
+      dismissedRequestIds.current.add(toolUseId)
       removeFileRequest(sessionId, toolUseId)
     },
     [sessionId]
