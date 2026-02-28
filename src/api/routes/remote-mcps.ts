@@ -5,7 +5,8 @@ import { remoteMcpServers } from '@shared/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { initiateOAuthFlow, initiateNewServerOAuth, completeOAuthFlow, discoverOAuthMetadata } from '@shared/lib/mcp/oauth'
 import type { McpToolInfo } from '@shared/lib/mcp/types'
-import { getAppBaseUrlFromRequest } from '@shared/lib/auth/config'
+import { getAppBaseUrlFromRequest, getCurrentUserId } from '@shared/lib/auth/config'
+import { isAuthMode } from '@shared/lib/auth/mode'
 import { Authenticated, UsersMcpServer, IsAdmin, Or } from '../middleware/auth'
 
 const remoteMcps = new Hono()
@@ -106,9 +107,15 @@ async function discoverTools(url: string, accessToken?: string | null): Promise<
   return toolsBody.result?.tools || []
 }
 
-// List all remote MCP servers
+// List remote MCP servers (scoped to user in auth mode)
 remoteMcps.get('/', async (c) => {
-  const servers = await db.select().from(remoteMcpServers).orderBy(remoteMcpServers.createdAt)
+  let query = db.select().from(remoteMcpServers).orderBy(remoteMcpServers.createdAt).$dynamic()
+
+  if (isAuthMode()) {
+    query = query.where(eq(remoteMcpServers.userId, getCurrentUserId(c)))
+  }
+
+  const servers = await query
   return c.json({
     servers: servers.map((s) => ({
       ...s,
@@ -155,6 +162,7 @@ remoteMcps.post('/', async (c) => {
     id,
     name: body.name.trim(),
     url: body.url.trim(),
+    userId: getCurrentUserId(c),
     authType,
     accessToken: body.accessToken || null,
     toolsJson: JSON.stringify(tools),
@@ -220,7 +228,7 @@ remoteMcps.post('/initiate-oauth', async (c) => {
     return c.json({ redirectUrl: result.authorizationUrl, state: result.state })
   } else if (body.name && body.url) {
     // New server: OAuth-first flow (no DB insert yet)
-    const result = await initiateNewServerOAuth(body.url.trim(), body.name.trim(), redirectUri)
+    const result = await initiateNewServerOAuth(body.url.trim(), body.name.trim(), redirectUri, getCurrentUserId(c))
 
     if (!result) {
       const discoveryResult = await discoverOAuthMetadata(body.url.trim())

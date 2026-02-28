@@ -2,6 +2,7 @@
  * Notifications API Routes
  *
  * Endpoints for managing user notifications.
+ * In auth mode, queries are scoped to the user's accessible agents.
  */
 
 import { Hono } from 'hono'
@@ -15,11 +16,25 @@ import {
   deleteNotification,
 } from '@shared/lib/services/notification-service'
 import { messagePersister } from '@shared/lib/container/message-persister'
-import { Authenticated, UsersNotification } from '../middleware/auth'
+import { isAuthMode } from '@shared/lib/auth/mode'
+import { Authenticated, HasNotificationAccess } from '../middleware/auth'
 
 const notificationsRouter = new Hono()
 
 notificationsRouter.use('*', Authenticated())
+
+/**
+ * Get the userId to scope notification queries.
+ * Returns undefined for non-auth mode or admin users (see all).
+ * Returns the user's ID for regular auth mode users.
+ */
+function getScopedUserId(c: { get: (key: never) => unknown }): string | undefined {
+  if (!isAuthMode()) return undefined
+  const user = c.get('user' as never) as { id: string; role?: string } | undefined
+  if (!user) return undefined
+  if (user.role === 'admin') return undefined // admin sees all
+  return user.id
+}
 
 // GET /api/notifications/stream - SSE stream for global notifications (used by Electron main process)
 notificationsRouter.get('/stream', async (c) => {
@@ -72,8 +87,9 @@ notificationsRouter.get('/', async (c) => {
   try {
     const limitParam = c.req.query('limit')
     const limit = limitParam ? parseInt(limitParam, 10) : 50
+    const userId = getScopedUserId(c)
 
-    const notificationList = await listNotifications(limit)
+    const notificationList = await listNotifications(limit, userId)
     return c.json(notificationList)
   } catch (error) {
     console.error('Failed to fetch notifications:', error)
@@ -84,7 +100,8 @@ notificationsRouter.get('/', async (c) => {
 // GET /api/notifications/unread-count - Get unread notification count
 notificationsRouter.get('/unread-count', async (c) => {
   try {
-    const count = await getUnreadCount()
+    const userId = getScopedUserId(c)
+    const count = await getUnreadCount(userId)
     return c.json({ count })
   } catch (error) {
     console.error('Failed to fetch unread count:', error)
@@ -93,7 +110,7 @@ notificationsRouter.get('/unread-count', async (c) => {
 })
 
 // POST /api/notifications/:id/read - Mark a notification as read
-notificationsRouter.post('/:id/read', UsersNotification(), async (c) => {
+notificationsRouter.post('/:id/read', HasNotificationAccess(), async (c) => {
   try {
     const notificationId = c.req.param('id')
     const success = await markAsRead(notificationId)
@@ -112,7 +129,8 @@ notificationsRouter.post('/:id/read', UsersNotification(), async (c) => {
 // POST /api/notifications/read-all - Mark all notifications as read
 notificationsRouter.post('/read-all', async (c) => {
   try {
-    const count = await markAllAsRead()
+    const userId = getScopedUserId(c)
+    const count = await markAllAsRead(userId)
     return c.json({ success: true, count })
   } catch (error) {
     console.error('Failed to mark all notifications as read:', error)
@@ -124,7 +142,8 @@ notificationsRouter.post('/read-all', async (c) => {
 notificationsRouter.post('/read-by-session/:sessionId', async (c) => {
   try {
     const sessionId = c.req.param('sessionId')
-    const count = await markSessionNotificationsRead(sessionId)
+    const userId = getScopedUserId(c)
+    const count = await markSessionNotificationsRead(sessionId, userId)
     return c.json({ success: true, count })
   } catch (error) {
     console.error('Failed to mark session notifications as read:', error)
@@ -133,7 +152,7 @@ notificationsRouter.post('/read-by-session/:sessionId', async (c) => {
 })
 
 // DELETE /api/notifications/:id - Delete a notification
-notificationsRouter.delete('/:id', UsersNotification(), async (c) => {
+notificationsRouter.delete('/:id', HasNotificationAccess(), async (c) => {
   try {
     const notificationId = c.req.param('id')
     const success = await deleteNotification(notificationId)

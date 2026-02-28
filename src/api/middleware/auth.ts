@@ -72,6 +72,7 @@ export function AgentRead(): MiddlewareHandler {
     if (!isAuthMode()) return next()
 
     const user = getUser(c)
+    if (isAdmin(user)) return next()
     const agentSlug = c.req.param('id')
     const role = await getUserAgentRole(user.id, agentSlug)
     if (!hasMinRole(role, 'viewer')) {
@@ -90,6 +91,7 @@ export function AgentUser(): MiddlewareHandler {
     if (!isAuthMode()) return next()
 
     const user = getUser(c)
+    if (isAdmin(user)) return next()
     const agentSlug = c.req.param('id')
     const role = await getUserAgentRole(user.id, agentSlug)
     if (!hasMinRole(role, 'user')) {
@@ -108,6 +110,7 @@ export function AgentAdmin(): MiddlewareHandler {
     if (!isAuthMode()) return next()
 
     const user = getUser(c)
+    if (isAdmin(user)) return next()
     const agentSlug = c.req.param('id')
     const role = await getUserAgentRole(user.id, agentSlug)
     if (!hasMinRole(role, 'owner')) {
@@ -183,23 +186,29 @@ export function UsersMcpServer(): MiddlewareHandler {
 }
 
 /**
- * UsersNotification — user owns the notification referenced by `:id` param.
+ * HasNotificationAccess — user has access to the notification's agent.
+ * Admins can access any notification. Regular users need an agentAcl entry
+ * for the notification's agentSlug. Expects `:id` route param.
  */
-export function UsersNotification(): MiddlewareHandler {
+export function HasNotificationAccess(): MiddlewareHandler {
   return async (c: Context, next: Next) => {
     if (!isAuthMode()) return next()
 
     const user = getUser(c)
+    if (isAdmin(user)) return next()
+
     const notificationId = c.req.param('id')
     const row = await db
-      .select({ userId: notifications.userId })
+      .select({ agentSlug: notifications.agentSlug })
       .from(notifications)
       .where(eq(notifications.id, notificationId))
       .limit(1)
 
-    if (!row[0] || row[0].userId !== user.id) {
-      return c.json({ error: 'Forbidden' }, 403)
-    }
+    if (!row[0]) return c.json({ error: 'Not found' }, 404)
+
+    const role = await getUserAgentRole(user.id, row[0].agentSlug)
+    if (!role) return c.json({ error: 'Forbidden' }, 403)
+
     return next()
   }
 }

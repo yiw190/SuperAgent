@@ -10,20 +10,28 @@ import {
   deleteConnection,
   getAccountDisplayName,
 } from '@shared/lib/composio/client'
-import { getAppBaseUrlFromRequest } from '@shared/lib/auth/config'
+import { getAppBaseUrlFromRequest, getCurrentUserId } from '@shared/lib/auth/config'
+import { isAuthMode } from '@shared/lib/auth/mode'
 import { Authenticated, OwnsAccount, IsAdmin, Or } from '../middleware/auth'
 
 const connectedAccountsRouter = new Hono()
 
 connectedAccountsRouter.use('*', Authenticated())
 
-// GET /api/connected-accounts - List all app-level connected accounts
+// GET /api/connected-accounts - List connected accounts (scoped to user in auth mode)
 connectedAccountsRouter.get('/', async (c) => {
   try {
-    const accounts = await db
+    let query = db
       .select()
       .from(connectedAccounts)
       .orderBy(desc(connectedAccounts.createdAt))
+      .$dynamic()
+
+    if (isAuthMode()) {
+      query = query.where(eq(connectedAccounts.userId, getCurrentUserId(c)))
+    }
+
+    const accounts = await query
 
     const enriched = accounts.map((account) => ({
       ...account,
@@ -61,6 +69,7 @@ connectedAccountsRouter.post('/', async (c) => {
       composioConnectionId,
       toolkitSlug,
       displayName,
+      userId: getCurrentUserId(c),
       status: 'active',
       createdAt: now,
       updatedAt: now,
@@ -188,6 +197,7 @@ connectedAccountsRouter.post('/complete', async (c) => {
       composioConnectionId: connectionId,
       toolkitSlug,
       displayName,
+      userId: getCurrentUserId(c),
       status: 'active',
       createdAt: now,
       updatedAt: now,
@@ -258,6 +268,7 @@ connectedAccountsRouter.get('/callback', async (c) => {
       composioConnectionId: connectionId,
       toolkitSlug,
       displayName,
+      userId: getCurrentUserId(c),
       status: 'active',
       createdAt: now,
       updatedAt: now,

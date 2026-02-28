@@ -18,8 +18,16 @@ export default defineConfig({
       exclude: [/^(?!\/api).*/], // Only handle /api/* routes
     }),
     {
-      name: 'container-shutdown',
+      name: 'server-lifecycle',
       configureServer(server) {
+        // Sync process.env.PORT to the actual bound port so that
+        // getAppPort() returns the right value even when Vite auto-assigns.
+        server.httpServer?.on('listening', () => {
+          const addr = server.httpServer?.address()
+          if (addr && typeof addr === 'object') {
+            process.env.PORT = String(addr.port)
+          }
+        })
         server.httpServer?.on('close', async () => {
           const { containerManager } = await import('./src/shared/lib/container/container-manager')
           await containerManager.stopAll()

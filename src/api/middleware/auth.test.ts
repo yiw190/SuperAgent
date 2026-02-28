@@ -31,7 +31,7 @@ vi.mock('@shared/lib/db/schema', () => ({
   agentAcl: { userId: 'user_id', agentSlug: 'agent_slug', role: 'role' },
   connectedAccounts: { id: 'id', userId: 'user_id' },
   remoteMcpServers: { id: 'id', userId: 'user_id' },
-  notifications: { id: 'id', userId: 'user_id' },
+  notifications: { id: 'id', userId: 'user_id', agentSlug: 'agent_slug' },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -48,7 +48,7 @@ import {
   IsAdmin,
   OwnsAccount,
   UsersMcpServer,
-  UsersNotification,
+  HasNotificationAccess,
   Or,
 } from './auth'
 
@@ -516,46 +516,65 @@ describe('Auth Middleware', () => {
   })
 
   // =========================================================================
-  // UsersNotification()
+  // HasNotificationAccess()
   // =========================================================================
 
-  describe('UsersNotification()', () => {
+  describe('HasNotificationAccess()', () => {
     it('is no-op when auth mode disabled', async () => {
       mockIsAuthMode.mockReturnValue(false)
-      const app = buildApp(UsersNotification())
+      const app = buildApp(HasNotificationAccess())
       const res = await request(app, '/notif-1')
       expect(res.status).toBe(200)
       expect(mockSelect).not.toHaveBeenCalled()
     })
 
-    it('allows when user owns the notification', async () => {
-      mockOwnershipQuery('user-1')
+    it('allows admin users without agent access check', async () => {
+      const app = new Hono()
+      setUser(app, { id: 'admin-1', role: 'admin' })
+      app.get('/:id', HasNotificationAccess(), (c) => c.json({ ok: true }))
+
+      const res = await request(app, '/notif-1')
+      expect(res.status).toBe(200)
+      expect(mockSelect).not.toHaveBeenCalled()
+    })
+
+    it('allows when user has access to notification agent', async () => {
+      // First query returns notification with agentSlug
+      mockLimit.mockResolvedValueOnce([{ agentSlug: 'test-agent' }])
+      // Second query returns user's role on that agent
+      mockLimit.mockResolvedValueOnce([{ role: 'user' }])
+
       const app = new Hono()
       setUser(app, { id: 'user-1', role: 'user' })
-      app.get('/:id', UsersNotification(), (c) => c.json({ ok: true }))
+      app.get('/:id', HasNotificationAccess(), (c) => c.json({ ok: true }))
 
       const res = await request(app, '/notif-1')
       expect(res.status).toBe(200)
     })
 
-    it('returns 403 when different user owns the notification', async () => {
-      mockOwnershipQuery('user-2')
+    it('returns 403 when user has no access to notification agent', async () => {
+      // First query returns notification with agentSlug
+      mockLimit.mockResolvedValueOnce([{ agentSlug: 'test-agent' }])
+      // Second query returns no role (no access)
+      mockLimit.mockResolvedValueOnce([])
+
       const app = new Hono()
       setUser(app, { id: 'user-1', role: 'user' })
-      app.get('/:id', UsersNotification(), (c) => c.json({ ok: true }))
+      app.get('/:id', HasNotificationAccess(), (c) => c.json({ ok: true }))
 
       const res = await request(app, '/notif-1')
       expect(res.status).toBe(403)
     })
 
-    it('returns 403 when notification does not exist', async () => {
-      mockOwnershipQuery(null)
+    it('returns 404 when notification does not exist', async () => {
+      mockLimit.mockResolvedValueOnce([])
+
       const app = new Hono()
       setUser(app, { id: 'user-1', role: 'user' })
-      app.get('/:id', UsersNotification(), (c) => c.json({ ok: true }))
+      app.get('/:id', HasNotificationAccess(), (c) => c.json({ ok: true }))
 
       const res = await request(app, '/nonexistent')
-      expect(res.status).toBe(403)
+      expect(res.status).toBe(404)
     })
   })
 
@@ -994,7 +1013,7 @@ describe('Auth Middleware', () => {
       { name: 'IsAdmin',       fn: IsAdmin,       needsParam: false },
       { name: 'OwnsAccount',   fn: OwnsAccount,   needsParam: true },
       { name: 'UsersMcpServer', fn: UsersMcpServer, needsParam: true },
-      { name: 'UsersNotification', fn: UsersNotification, needsParam: true },
+      { name: 'HasNotificationAccess', fn: HasNotificationAccess, needsParam: true },
     ]
 
     for (const { name, fn, needsParam } of middlewareFactories) {
