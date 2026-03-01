@@ -39,6 +39,11 @@ vi.mock('drizzle-orm', () => ({
   and: (...args: unknown[]) => args,
 }))
 
+const mockValidateProxyToken = vi.fn<(token: string) => Promise<boolean>>()
+vi.mock('@shared/lib/proxy/token-store', () => ({
+  validateProxyToken: (token: string) => mockValidateProxyToken(token),
+}))
+
 // Import after mocks
 import {
   Authenticated,
@@ -46,6 +51,7 @@ import {
   AgentUser,
   AgentAdmin,
   IsAdmin,
+  IsAgent,
   OwnsAccount,
   UsersMcpServer,
   HasNotificationAccess,
@@ -424,6 +430,105 @@ describe('Auth Middleware', () => {
       const app = buildAppNoParam(IsAdmin())
       const res = await request(app, '/')
       expect(res.status).toBe(500)
+    })
+  })
+
+  // =========================================================================
+  // IsAgent()
+  // =========================================================================
+
+  describe('IsAgent()', () => {
+    it('allows request with valid proxy token', async () => {
+      mockValidateProxyToken.mockResolvedValue(true)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'Bearer valid-token' },
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: true })
+      expect(mockValidateProxyToken).toHaveBeenCalledWith('valid-token')
+    })
+
+    it('returns 401 when proxy token is invalid', async () => {
+      mockValidateProxyToken.mockResolvedValue(false)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'Bearer bad-token' },
+      })
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: 'Unauthorized' })
+    })
+
+    it('returns 401 when Authorization header is missing', async () => {
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test')
+      expect(res.status).toBe(401)
+      expect(await res.json()).toEqual({ error: 'Unauthorized' })
+      expect(mockValidateProxyToken).not.toHaveBeenCalled()
+    })
+
+    it('returns 401 when Authorization header has wrong format', async () => {
+      mockValidateProxyToken.mockResolvedValue(false)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'InvalidFormat token' },
+      })
+      expect(res.status).toBe(401)
+    })
+
+    it('validates tokens regardless of auth mode being enabled', async () => {
+      mockIsAuthMode.mockReturnValue(true)
+      mockValidateProxyToken.mockResolvedValue(true)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'Bearer valid-token' },
+      })
+      expect(res.status).toBe(200)
+      expect(mockValidateProxyToken).toHaveBeenCalledWith('valid-token')
+    })
+
+    it('validates tokens regardless of auth mode being disabled', async () => {
+      mockIsAuthMode.mockReturnValue(false)
+      mockValidateProxyToken.mockResolvedValue(true)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'Bearer valid-token' },
+      })
+      expect(res.status).toBe(200)
+      expect(mockValidateProxyToken).toHaveBeenCalledWith('valid-token')
+    })
+
+    it('rejects missing token in non-auth mode', async () => {
+      mockIsAuthMode.mockReturnValue(false)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test')
+      expect(res.status).toBe(401)
+    })
+
+    it('rejects invalid token in non-auth mode', async () => {
+      mockIsAuthMode.mockReturnValue(false)
+      mockValidateProxyToken.mockResolvedValue(false)
+      const app = new Hono()
+      app.get('/test', IsAgent(), (c) => c.json({ ok: true }))
+
+      const res = await app.request('http://localhost/test', {
+        headers: { Authorization: 'Bearer bad-token' },
+      })
+      expect(res.status).toBe(401)
     })
   })
 

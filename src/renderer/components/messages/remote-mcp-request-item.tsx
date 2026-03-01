@@ -1,6 +1,6 @@
 import { apiFetch } from '@renderer/lib/api'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import {
   Plug,
   Check,
@@ -80,34 +80,53 @@ export function RemoteMcpRequestItem({
     }
   }, [servers, url])
 
+  // Handle OAuth completion (shared by Electron IPC and web postMessage)
+  const handleOAuthComplete = useCallback((success: boolean, errorMessage?: string) => {
+    if (success) {
+      setError(null)
+      // Refetch servers to find the newly created one
+      refetch().then(({ data: refreshedData }) => {
+        const refreshedServers = Array.isArray(refreshedData?.servers) ? refreshedData.servers : []
+        const newServer = refreshedServers.find((s) => s.url === url)
+        if (newServer) {
+          setSelectedMcpId(newServer.id)
+        }
+        setStatus('pending')
+      }).catch(() => {
+        setStatus('pending')
+      })
+    } else {
+      setError(errorMessage || 'OAuth authorization failed')
+      setStatus('pending')
+    }
+  }, [url, refetch])
+
   // Listen for MCP OAuth callback from Electron main process
   useEffect(() => {
     if (!window.electronAPI || status !== 'oauth_pending') return
 
     window.electronAPI.onMcpOAuthCallback((params) => {
-      if (params.success) {
-        setError(null)
-        // Refetch servers to find the newly created one
-        refetch().then(({ data: refreshedData }) => {
-          const refreshedServers = Array.isArray(refreshedData?.servers) ? refreshedData.servers : []
-          const newServer = refreshedServers.find((s) => s.url === url)
-          if (newServer) {
-            setSelectedMcpId(newServer.id)
-          }
-          setStatus('pending')
-        }).catch(() => {
-          setStatus('pending')
-        })
-      } else {
-        setError(params.error || 'OAuth authorization failed')
-        setStatus('pending')
-      }
+      handleOAuthComplete(params.success, params.error)
     })
 
     return () => {
       window.electronAPI?.removeMcpOAuthCallback()
     }
-  }, [status, url, refetch])
+  }, [status, handleOAuthComplete])
+
+  // Listen for MCP OAuth callback via postMessage (web mode)
+  useEffect(() => {
+    if (status !== 'oauth_pending') return
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'mcp-oauth-callback') {
+        handleOAuthComplete(event.data.success, event.data.error)
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [status, handleOAuthComplete])
 
   const startOAuthFlow = async () => {
     try {

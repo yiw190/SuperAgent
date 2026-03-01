@@ -2,12 +2,24 @@ import { Hono } from 'hono'
 import crypto from 'crypto'
 import { db } from '@shared/lib/db'
 import { remoteMcpServers } from '@shared/lib/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { initiateOAuthFlow, initiateNewServerOAuth, completeOAuthFlow, discoverOAuthMetadata } from '@shared/lib/mcp/oauth'
 import type { McpToolInfo } from '@shared/lib/mcp/types'
 import { getAppBaseUrlFromRequest, getCurrentUserId } from '@shared/lib/auth/config'
 import { isAuthMode } from '@shared/lib/auth/mode'
 import { Authenticated, UsersMcpServer, IsAdmin, Or } from '../middleware/auth'
+
+/**
+ * Escape a string for safe inclusion in HTML content
+ */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 
 const remoteMcps = new Hono()
 
@@ -156,10 +168,10 @@ remoteMcps.post('/', async (c) => {
     if (error.message?.includes('401')) {
       const discovery = await discoverOAuthMetadata(body.url.trim())
       if (discovery) {
-        return c.json({ error: 'This MCP server requires OAuth authentication', needsOAuth: true }, 401)
+        return c.json({ error: 'This MCP server requires OAuth authentication', needsOAuth: true }, 400)
       }
       // No OAuth metadata — server likely needs a bearer token
-      return c.json({ error: 'This MCP server requires authentication. Try adding a bearer token.', needsAuth: true }, 401)
+      return c.json({ error: 'This MCP server requires authentication. Try adding a bearer token.', needsAuth: true }, 400)
     }
     return c.json({ error: `Failed to connect to MCP server: ${error.message}` }, 502)
   }
@@ -214,10 +226,14 @@ remoteMcps.post('/initiate-oauth', async (c) => {
 
   if (body.mcpId) {
     // Existing server re-auth
+    const userId = getCurrentUserId(c)
     const [server] = await db
       .select()
       .from(remoteMcpServers)
-      .where(eq(remoteMcpServers.id, body.mcpId))
+      .where(and(
+        eq(remoteMcpServers.id, body.mcpId),
+        isAuthMode() ? eq(remoteMcpServers.userId, userId) : undefined
+      ))
       .limit(1)
 
     if (!server) {
@@ -260,11 +276,13 @@ remoteMcps.get('/oauth-callback', async (c) => {
   const error = c.req.query('error')
 
   if (error) {
+    const safeError = escapeHtml(error)
+    const errorPayload = JSON.stringify({ type: 'mcp-oauth-callback', success: false, error: safeError })
     return c.html(`
       <html><body><script>
-        window.opener?.postMessage({ type: 'mcp-oauth-callback', success: false, error: '${error}' }, '*');
+        window.opener?.postMessage(${errorPayload}, '*');
         window.close();
-      </script><p>OAuth error: ${error}. You can close this window.</p></body></html>
+      </script><p>OAuth error: ${safeError}. You can close this window.</p></body></html>
     `)
   }
 
@@ -275,9 +293,10 @@ remoteMcps.get('/oauth-callback', async (c) => {
   const result = await completeOAuthFlow(state, code)
 
   if (!result.success || !result.mcpId) {
+    const failPayload = JSON.stringify({ type: 'mcp-oauth-callback', success: false, error: 'Token exchange failed' })
     return c.html(`
       <html><body><script>
-        window.opener?.postMessage({ type: 'mcp-oauth-callback', success: false, error: 'Token exchange failed' }, '*');
+        window.opener?.postMessage(${failPayload}, '*');
         window.close();
       </script><p>OAuth failed. You can close this window.</p></body></html>
     `)

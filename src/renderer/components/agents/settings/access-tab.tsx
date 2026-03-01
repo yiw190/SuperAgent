@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@renderer/lib/api'
 import { Button } from '@renderer/components/ui/button'
@@ -42,6 +42,13 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
   const queryClient = useQueryClient()
   const [isInviting, setIsInviting] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
   const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null)
   const [inviteRole, setInviteRole] = useState<AgentRole>('user')
 
@@ -57,13 +64,13 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
 
   // Search users
   const { data: searchResults } = useQuery<SearchUser[]>({
-    queryKey: ['search-users', agentSlug, searchQuery],
+    queryKey: ['search-users', agentSlug, debouncedQuery],
     queryFn: async () => {
-      const res = await apiFetch(`/api/agents/${agentSlug}/access/search-users?q=${encodeURIComponent(searchQuery)}`)
+      const res = await apiFetch(`/api/agents/${agentSlug}/access/search-users?q=${encodeURIComponent(debouncedQuery)}`)
       if (!res.ok) return []
       return res.json()
     },
-    enabled: searchQuery.length >= 2,
+    enabled: debouncedQuery.length >= 2,
   })
 
   // Invite user
@@ -79,6 +86,7 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
         throw new Error(data.error || 'Failed to invite user')
       }
     },
+    onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-access', agentSlug] })
       queryClient.invalidateQueries({ queryKey: ['my-agent-roles'] })
@@ -87,6 +95,7 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
       setSearchQuery('')
       setInviteRole('user')
     },
+    onError: (err: Error) => setError(err.message),
   })
 
   // Change role
@@ -102,10 +111,12 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
         throw new Error(data.error || 'Failed to change role')
       }
     },
+    onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-access', agentSlug] })
       queryClient.invalidateQueries({ queryKey: ['my-agent-roles'] })
     },
+    onError: (err: Error) => setError(err.message),
   })
 
   // Remove access
@@ -119,10 +130,12 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
         throw new Error(data.error || 'Failed to remove access')
       }
     },
+    onMutate: () => setError(null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-access', agentSlug] })
       queryClient.invalidateQueries({ queryKey: ['my-agent-roles'] })
     },
+    onError: (err: Error) => setError(err.message),
   })
 
   const ownerCount = accessList?.filter((e) => e.role === 'owner').length ?? 0
@@ -146,6 +159,10 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
           Invite
         </Button>
       </div>
+
+      {error && (
+        <div className="text-sm text-destructive px-1">{error}</div>
+      )}
 
       {/* Invite form */}
       {isInviting && (
@@ -189,7 +206,7 @@ export function AccessTab({ agentSlug }: AccessTabProps) {
                   ))}
                 </div>
               )}
-              {searchQuery.length >= 2 && searchResults?.length === 0 && (
+              {debouncedQuery.length >= 2 && searchResults?.length === 0 && (
                 <p className="text-xs text-muted-foreground">No users found</p>
               )}
             </div>

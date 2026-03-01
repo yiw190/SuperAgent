@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { admin } from 'better-auth/plugins'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '@shared/lib/db'
 import * as schema from '@shared/lib/db/schema'
 import { getOrCreateAuthSecret } from './secret'
@@ -52,21 +52,23 @@ export function getAuth() {
         user: {
           create: {
             after: async (createdUser) => {
-              // Make the first user an admin automatically.
-              // Race-safe: check count after this user was already inserted.
               try {
-                const [{ count }] = await db
-                  .select({ count: sql<number>`count(*)` })
-                  .from(schema.user)
-                if (count === 1) {
-                  // This is the first (and only) user — promote to admin
-                  await db
-                    .update(schema.user)
-                    .set({ role: 'admin' })
-                    .where(eq(schema.user.id, createdUser.id))
+                // Atomic: only promote if this is the sole user in the table
+                const result = db
+                  .update(schema.user)
+                  .set({ role: 'admin' })
+                  .where(
+                    and(
+                      eq(schema.user.id, createdUser.id),
+                      sql`(SELECT count(*) FROM user) = 1`
+                    )
+                  )
+                  .run()
+                if (result.changes > 0) {
+                  console.log(`First user ${createdUser.email} promoted to admin`)
                 }
-              } catch (error) {
-                console.error('Failed to check/set first user as admin:', error)
+              } catch (err) {
+                console.error('Failed to check/set admin role:', err)
               }
             },
           },

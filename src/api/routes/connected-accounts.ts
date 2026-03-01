@@ -127,9 +127,11 @@ connectedAccountsRouter.post('/initiate', async (c) => {
       callbackUrl = `${origin}/api/connected-accounts/callback?toolkit=${encodeURIComponent(providerSlug)}`
     }
 
+    const composioUserId = isAuthMode() ? getCurrentUserId(c) : undefined
     const { connectionId, redirectUrl } = await initiateConnection(
       authConfig.id,
-      callbackUrl
+      callbackUrl,
+      composioUserId
     )
 
     return c.json({
@@ -155,9 +157,12 @@ connectedAccountsRouter.post('/initiate', async (c) => {
       )
     }
 
+    // Never forward upstream 401s as our own — 401 is reserved for session auth
+    // and triggers auto-sign-out on the frontend.
+    const status = error.statusCode === 401 ? 502 : (error.statusCode || 500)
     return c.json(
       { error: error.message || 'Failed to initiate connection' },
-      error.statusCode || 500
+      status
     )
   }
 })

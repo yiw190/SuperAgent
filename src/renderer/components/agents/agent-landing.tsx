@@ -42,9 +42,9 @@ export function AgentLanding({ agent, onSessionCreated }: AgentLandingProps) {
   const { data: discoverableSkillsData } = useDiscoverableSkills(agent.slug)
   const discoverableSkills = useMemo(() => Array.isArray(discoverableSkillsData) ? discoverableSkillsData : [], [discoverableSkillsData])
   const refreshSkills = useRefreshAgentSkills()
-  const { data: runtimeStatus } = useRuntimeStatus()
+  const { data: runtimeStatus, isPending: isRuntimePending } = useRuntimeStatus()
   const readiness = runtimeStatus?.runtimeReadiness
-  const isRuntimeReady = readiness?.status === 'READY'
+  const isRuntimeReady = isRuntimePending || readiness?.status === 'READY'
   const isPulling = readiness?.status === 'PULLING_IMAGE'
   const apiKeyConfigured = runtimeStatus?.apiKeyConfigured !== false
 
@@ -213,7 +213,7 @@ export function AgentLanding({ agent, onSessionCreated }: AgentLandingProps) {
     setSkillPage(0)
   }, [skillSearch, selectedSkillsets])
 
-  const isDisabled = createSession.isPending || isUploading || !isRuntimeReady || !apiKeyConfigured
+  const isDisabled = createSession.isPending || isUploading || !isRuntimeReady
 
   return (
     <div className="flex-1 flex flex-col items-center overflow-y-auto p-8">

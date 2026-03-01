@@ -237,8 +237,10 @@ export function IsAgent(): MiddlewareHandler {
 // ---------------------------------------------------------------------------
 
 /**
- * Or — passes if ANY of the given middleware allows (doesn't return 4xx).
- * If all fail, returns the last middleware's error response.
+ * Or — pass if ANY of the given middleware passes.
+ * Tries each middleware in order. If one passes (calls next), the request proceeds.
+ * If all fail, returns a generic 403 Forbidden response.
+ * In non-auth mode, passes through immediately.
  */
 export function Or(...middlewares: MiddlewareHandler[]): MiddlewareHandler {
   return async (c: Context, next: Next) => {

@@ -56,9 +56,9 @@ export function MainContent() {
   const { browserActive, isActive, contextUsage: streamContextUsage } = useMessageStream(sessionId ?? null, agentSlug ?? null)
   const { canUseAgent } = useUser()
   const isViewOnly = agentSlug ? !canUseAgent(agentSlug) : false
-  const { data: runtimeStatus } = useRuntimeStatus()
+  const { data: runtimeStatus, isPending: isRuntimePending } = useRuntimeStatus()
   const readiness = runtimeStatus?.runtimeReadiness
-  const isRuntimeReady = readiness?.status === 'READY'
+  const isRuntimeReady = isRuntimePending || readiness?.status === 'READY'
   const isPulling = readiness?.status === 'PULLING_IMAGE'
   const apiKeyConfigured = runtimeStatus?.apiKeyConfigured !== false
 
@@ -187,7 +187,7 @@ export function MainContent() {
                           variant="outline"
                           size="sm"
                           onClick={() => startAgent.mutate(agentSlug)}
-                          disabled={startAgent.isPending || !isRuntimeReady || !apiKeyConfigured}
+                          disabled={startAgent.isPending || !isRuntimeReady}
                         >
                           {isPulling ? (
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import {
@@ -38,6 +38,13 @@ export function UsersTab() {
   const { user: currentUser } = useUser()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
   const [confirmAction, setConfirmAction] = useState<{
     type: 'delete' | 'ban'
     user: AdminUser
@@ -45,15 +52,15 @@ export function UsersTab() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['admin-users', search],
+    queryKey: ['admin-users', debouncedSearch],
     queryFn: async () => {
       const params: Record<string, string> = {
         sortBy: 'createdAt',
         sortDirection: 'desc',
         limit: '100',
       }
-      if (search.trim()) {
-        params.searchValue = search.trim()
+      if (debouncedSearch.trim()) {
+        params.searchValue = debouncedSearch.trim()
         params.searchField = 'email'
         params.searchOperator = 'contains'
       }

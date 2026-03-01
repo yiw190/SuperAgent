@@ -101,10 +101,12 @@ export const connectedAccounts = sqliteTable('connected_accounts', {
   status: text('status', { enum: ['active', 'revoked', 'expired'] })
     .notNull()
     .default('active'),
-  userId: text('user_id'), // Owner in auth mode, null in non-auth mode
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
-})
+  userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }), // Owner in auth mode, null in non-auth mode
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+}, (table) => ({
+  userIdIdx: index('connected_accounts_userId_idx').on(table.userId),
+}))
 
 // Agent connected accounts - junction table for agent-to-account mappings
 // Note: agentSlug references the agent's directory name, not a DB foreign key
@@ -116,7 +118,7 @@ export const agentConnectedAccounts = sqliteTable(
     connectedAccountId: text('connected_account_id')
       .notNull()
       .references(() => connectedAccounts.id, { onDelete: 'cascade' }),
-    createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (table) => ({
     agentAccountUnique: uniqueIndex('agent_connected_accounts_unique').on(
@@ -145,8 +147,8 @@ export const scheduledTasks = sqliteTable('scheduled_tasks', {
     .default('pending'),
 
   // Timing
-  nextExecutionAt: integer('next_execution_at', { mode: 'timestamp' }).notNull(),
-  lastExecutedAt: integer('last_executed_at', { mode: 'timestamp' }),
+  nextExecutionAt: integer('next_execution_at', { mode: 'timestamp_ms' }).notNull(),
+  lastExecutedAt: integer('last_executed_at', { mode: 'timestamp_ms' }),
 
   // Recurrence
   isRecurring: integer('is_recurring', { mode: 'boolean' }).notNull().default(false),
@@ -158,8 +160,8 @@ export const scheduledTasks = sqliteTable('scheduled_tasks', {
   createdByUserId: text('created_by_user_id'), // For ACL purposes in auth mode
 
   // Timestamps
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  cancelledAt: integer('cancelled_at', { mode: 'timestamp' }),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
 })
 
 // Notifications - user notifications for session events
@@ -171,17 +173,21 @@ export const notifications = sqliteTable('notifications', {
   title: text('title').notNull(),
   body: text('body').notNull(),
   isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
-  userId: text('user_id'), // Owner in auth mode, null in non-auth mode
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  readAt: integer('read_at', { mode: 'timestamp' }),
-})
+  userId: text('user_id').references(() => user.id, { onDelete: 'set null' }), // Owner in auth mode, null in non-auth mode
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  readAt: integer('read_at', { mode: 'timestamp_ms' }),
+}, (table) => ({
+  agentSlugIsReadIdx: index('notifications_agent_slug_is_read_idx').on(table.agentSlug, table.isRead),
+  sessionIdIdx: index('notifications_session_id_idx').on(table.sessionId),
+  createdAtIdx: index('notifications_created_at_idx').on(table.createdAt),
+}))
 
 // Proxy tokens - synthetic tokens for agent-to-proxy authentication
 export const proxyTokens = sqliteTable('proxy_tokens', {
   id: text('id').primaryKey(),
   agentSlug: text('agent_slug').notNull().unique(),
   token: text('token').notNull().unique(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 // Proxy audit log - structured log of all proxied requests
@@ -195,7 +201,7 @@ export const proxyAuditLog = sqliteTable('proxy_audit_log', {
   method: text('method').notNull(),
   statusCode: integer('status_code'),
   errorMessage: text('error_message'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 // Remote MCP servers registered at app level
@@ -203,13 +209,13 @@ export const remoteMcpServers = sqliteTable('remote_mcp_servers', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   url: text('url').notNull(),
-  userId: text('user_id'), // Owner in auth mode, null in non-auth mode
+  userId: text('user_id').references(() => user.id, { onDelete: 'cascade' }), // Owner in auth mode, null in non-auth mode
   authType: text('auth_type', { enum: ['none', 'oauth', 'bearer'] }).notNull().default('none'),
 
   // Auth tokens
   accessToken: text('access_token'),
   refreshToken: text('refresh_token'),
-  tokenExpiresAt: integer('token_expires_at', { mode: 'timestamp' }),
+  tokenExpiresAt: integer('token_expires_at', { mode: 'timestamp_ms' }),
 
   // OAuth metadata (for token refresh)
   oauthTokenEndpoint: text('oauth_token_endpoint'),
@@ -219,12 +225,12 @@ export const remoteMcpServers = sqliteTable('remote_mcp_servers', {
 
   // Server metadata (cached from discovery)
   toolsJson: text('tools_json'),
-  toolsDiscoveredAt: integer('tools_discovered_at', { mode: 'timestamp' }),
+  toolsDiscoveredAt: integer('tools_discovered_at', { mode: 'timestamp_ms' }),
 
   status: text('status', { enum: ['active', 'error', 'auth_required'] }).notNull().default('active'),
   errorMessage: text('error_message'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 // Junction table: agent → remote MCP mappings
@@ -233,7 +239,7 @@ export const agentRemoteMcps = sqliteTable('agent_remote_mcps', {
   agentSlug: text('agent_slug').notNull(),
   remoteMcpId: text('remote_mcp_id').notNull()
     .references(() => remoteMcpServers.id, { onDelete: 'cascade' }),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, (table) => ({
   agentMcpUnique: uniqueIndex('agent_remote_mcps_unique').on(table.agentSlug, table.remoteMcpId),
 }))
@@ -249,16 +255,16 @@ export const mcpAuditLog = sqliteTable('mcp_audit_log', {
   statusCode: integer('status_code'),
   errorMessage: text('error_message'),
   durationMs: integer('duration_ms'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 // Agent ACLs - maps users to agents with roles (auth mode only)
 export const agentAcl = sqliteTable('agent_acl', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
+  userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   agentSlug: text('agent_slug').notNull(),
   role: text('role', { enum: ['owner', 'user', 'viewer'] }).notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
 }, (table) => ({
   userAgentUnique: uniqueIndex('agent_acl_user_agent_unique').on(table.userId, table.agentSlug),
   agentSlugIdx: index('agent_acl_agent_slug_idx').on(table.agentSlug),
@@ -266,9 +272,9 @@ export const agentAcl = sqliteTable('agent_acl', {
 
 // User settings - per-user preferences (uses 'local' sentinel in non-auth mode)
 export const userSettings = sqliteTable('user_settings', {
-  userId: text('user_id').primaryKey(),
+  userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
   settings: text('settings').notNull(), // JSON blob validated by Zod
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
 })
 
 // Type exports for convenience

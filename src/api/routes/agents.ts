@@ -293,7 +293,12 @@ Respond with ONLY the session name, nothing else. No quotes, no explanation.`,
 // GET /api/agents - List agents with status (filtered by ACL in auth mode)
 agents.get('/', async (c) => {
   try {
-    // In auth mode, only load agents the user has access to (avoids reading all agent dirs)
+    // In auth mode, only return agents the user has explicit ACL entries for.
+    // Note: Admins do NOT get implicit access to all agents in the listing.
+    // This is intentional — admin privileges grant bypass access to individual
+    // agent routes (via middleware), but agents must be explicitly shared with
+    // admins for them to appear in the sidebar. This prevents admins from
+    // seeing every agent in large deployments.
     if (isAuthMode()) {
       const userId = getCurrentUserId(c)
       const rows = await db
@@ -1328,11 +1333,15 @@ agents.post('/:id/sessions/:sessionId/provide-connected-account', AgentUser(), a
       )
     }
 
-    // Get the selected accounts
+    // Get the selected accounts (scoped to user in auth mode)
+    const userId = getCurrentUserId(c)
     const accounts = await db
       .select()
       .from(connectedAccounts)
-      .where(inArray(connectedAccounts.id, accountIds))
+      .where(and(
+        inArray(connectedAccounts.id, accountIds),
+        isAuthMode() ? eq(connectedAccounts.userId, userId) : undefined
+      ))
 
     if (accounts.length === 0) {
       return c.json({ error: 'No valid accounts found' }, 400)
@@ -1708,9 +1717,24 @@ agents.post('/:id/connected-accounts', AgentUser(), async (c) => {
       )
     }
 
+    // Verify ownership of accounts in auth mode
+    const userId = getCurrentUserId(c)
+    const ownedAccounts = await db
+      .select()
+      .from(connectedAccounts)
+      .where(and(
+        inArray(connectedAccounts.id, accountIds),
+        isAuthMode() ? eq(connectedAccounts.userId, userId) : undefined
+      ))
+    const ownedAccountIds = new Set(ownedAccounts.map(a => a.id))
+    const validAccountIds = accountIds.filter(id => ownedAccountIds.has(id))
+
+    if (validAccountIds.length === 0) {
+      return c.json({ error: 'No valid accounts found' }, 400)
+    }
 
     const now = new Date()
-    const newMappings = accountIds.map((accountId) => ({
+    const newMappings = validAccountIds.map((accountId) => ({
       id: crypto.randomUUID(),
       agentSlug: slug,
       connectedAccountId: accountId,
@@ -1982,7 +2006,7 @@ agents.post('/:id/sessions/:sessionId/provide-remote-mcp', AgentUser(), async (c
 })
 
 // GET /api/agents/:id/mcp-audit-log - Get MCP audit log for an agent
-agents.get('/:id/mcp-audit-log', AgentUser(), async (c) => {
+agents.get('/:id/mcp-audit-log', AgentAdmin(), async (c) => {
   try {
     const slug = c.req.param('id')
     const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 100)
@@ -2318,7 +2342,7 @@ agents.post('/:id/template-publish', AgentAdmin(), async (c) => {
 })
 
 // POST /api/agents/:id/template-refresh - Refresh status
-agents.post('/:id/template-refresh', AgentRead(), async (c) => {
+agents.post('/:id/template-refresh', AgentUser(), async (c) => {
   try {
     const settings = getSettings()
     const skillsets = settings.skillsets || []
@@ -2334,7 +2358,7 @@ agents.post('/:id/template-refresh', AgentRead(), async (c) => {
 })
 
 // POST /api/agents/:id/skills/refresh - Refresh skillset caches and reconcile skill status
-agents.post('/:id/skills/refresh', AgentRead(), async (c) => {
+agents.post('/:id/skills/refresh', AgentUser(), async (c) => {
   try {
     const agentSlug = c.req.param('id')
     const settings = getSettings()

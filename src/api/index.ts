@@ -28,7 +28,42 @@ if (process.type !== 'browser') {
 }
 
 // Enable CORS for all routes
-app.use('*', cors())
+const trustedOrigins = process.env.TRUSTED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean)
+app.use('*', cors(trustedOrigins?.length ? { origin: trustedOrigins } : undefined))
+
+// Simple rate limiter for auth endpoints
+const authAttempts = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_MAX = 20
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000 // 15 minutes
+
+if (isAuthMode()) {
+  app.use('/api/auth/*', async (c, next) => {
+    // Only rate-limit POST requests (sign-in, sign-up attempts)
+    if (c.req.method !== 'POST') return next()
+
+    const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown'
+    const now = Date.now()
+    const entry = authAttempts.get(ip)
+
+    if (entry && now < entry.resetAt) {
+      if (entry.count >= RATE_LIMIT_MAX) {
+        return c.json({ error: 'Too many attempts. Please try again later.' }, 429)
+      }
+      entry.count++
+    } else {
+      authAttempts.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW })
+    }
+
+    // Clean up old entries periodically
+    if (authAttempts.size > 1000) {
+      for (const [key, val] of authAttempts) {
+        if (now >= val.resetAt) authAttempts.delete(key)
+      }
+    }
+
+    return next()
+  })
+}
 
 // Mount Better Auth handler (only when AUTH_MODE is enabled)
 if (isAuthMode()) {

@@ -5,6 +5,16 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Button } from '@renderer/components/ui/button'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@renderer/components/ui/alert-dialog'
+import {
   useConnectedAccounts,
   useInitiateConnection,
   useDeleteConnectedAccount,
@@ -52,6 +62,7 @@ function ConnectedAccountsSection() {
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null)
+  const [disconnectAccount, setDisconnectAccount] = useState<{ id: string; name: string } | null>(null)
   const [editingAccount, setEditingAccount] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
 
@@ -131,9 +142,11 @@ function ConnectedAccountsSection() {
     }
   }
 
-  const handleDelete = async (accountId: string) => {
-    if (!confirm('Are you sure you want to disconnect this account?')) return
+  const handleDelete = (account: ConnectedAccount) => {
+    setDisconnectAccount({ id: account.id, name: account.displayName })
+  }
 
+  const handleConfirmDelete = async (accountId: string) => {
     setDeletingAccount(accountId)
     try {
       await deleteAccount.mutateAsync(accountId)
@@ -251,7 +264,7 @@ function ConnectedAccountsSection() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => handleDelete(account.id)}
+                    onClick={() => handleDelete(account)}
                     disabled={deletingAccount === account.id}
                   >
                     {deletingAccount === account.id ? (
@@ -299,6 +312,32 @@ function ConnectedAccountsSection() {
           ))}
         </div>
       </div>
+
+      {/* Disconnect confirmation dialog */}
+      <AlertDialog open={!!disconnectAccount} onOpenChange={(open) => !open && setDisconnectAccount(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Account</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to disconnect {disconnectAccount?.name}? This will remove the stored credentials.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (disconnectAccount) {
+                  handleConfirmDelete(disconnectAccount.id)
+                }
+                setDisconnectAccount(null)
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

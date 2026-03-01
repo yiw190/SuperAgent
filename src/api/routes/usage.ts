@@ -19,7 +19,7 @@ usage.get('/', async (c) => {
   const days = Math.min(Math.max(parseInt(daysParam || '7', 10) || 7, 1), 90)
   const globalParam = c.req.query('global') === 'true'
   // Only admins can request global view
-  const user = c.get('user' as never) as { id: string; role?: string } | undefined
+  const user = isAuthMode() ? c.get('user' as never) as { id: string; role?: string } | undefined : undefined
   const globalView = globalParam && (!isAuthMode() || user?.role === 'admin')
 
   const now = new Date()

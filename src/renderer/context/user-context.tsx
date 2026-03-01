@@ -1,5 +1,5 @@
 import { createContext, useContext, useCallback, useMemo, type ReactNode } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSession, signOut as authSignOut } from '@renderer/lib/auth-client'
 import { apiFetch } from '@renderer/lib/api'
 
@@ -54,9 +54,18 @@ function useAgentRoles(enabled: boolean) {
   })
 }
 
+// __AUTH_MODE__ is a compile-time constant — only one branch survives dead code elimination.
+// This avoids a wasted 404 request to /api/auth/get-session when auth is disabled.
+function useAuthSession() {
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  if (__AUTH_MODE__) return useSession()
+  return { data: null, isPending: false } as ReturnType<typeof useSession>
+}
+
 export function UserProvider({ children }: { children: ReactNode }) {
   // Better Auth session (only active in auth mode)
-  const session = useSession()
+  const session = useAuthSession()
+  const queryClient = useQueryClient()
   const sessionUser = isAuthMode ? (session.data?.user as User | undefined) ?? null : null
   const isPending = isAuthMode ? session.isPending : false
 
@@ -86,6 +95,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const canAccessAgent = useCallback(
     (agentSlug: string): boolean => {
       if (!isAuthMode) return true
+      // Note: Admins don't get implicit access here. Admin bypass is handled
+      // server-side in middleware. Agents must be explicitly shared with admins
+      // to appear in the UI. This is intentional for large deployments.
       return agentRole(agentSlug) !== null
     },
     [agentRole],
@@ -94,6 +106,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const canUseAgent = useCallback(
     (agentSlug: string): boolean => {
       if (!isAuthMode) return true
+      // Note: Admins don't get implicit access here. Admin bypass is handled
+      // server-side in middleware. Agents must be explicitly shared with admins
+      // to appear in the UI. This is intentional for large deployments.
       const role = agentRole(agentSlug)
       return role === 'owner' || role === 'user'
     },
@@ -103,6 +118,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const canAdminAgent = useCallback(
     (agentSlug: string): boolean => {
       if (!isAuthMode) return true
+      // Note: Admins don't get implicit access here. Admin bypass is handled
+      // server-side in middleware. Agents must be explicitly shared with admins
+      // to appear in the UI. This is intentional for large deployments.
       return agentRole(agentSlug) === 'owner'
     },
     [agentRole],
@@ -110,7 +128,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await authSignOut()
-  }, [])
+    queryClient.clear()
+  }, [queryClient])
 
   const value = useMemo<UserContextValue>(
     () => ({

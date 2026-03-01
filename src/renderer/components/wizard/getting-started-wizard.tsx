@@ -36,6 +36,7 @@ import {
 } from '@renderer/hooks/use-connected-accounts'
 import { useQuery } from '@tanstack/react-query'
 import type { Provider } from '@shared/lib/composio/providers'
+import { useUser } from '@renderer/context/user-context'
 
 const STEPS = [
   { label: 'Welcome' },
@@ -448,6 +449,7 @@ interface ComposioStepProps {
 function ComposioStep({ onCanProceedChange, saveRef }: ComposioStepProps) {
   const { data: settings } = useSettings()
   const updateSettings = useUpdateSettings()
+  const { isAuthMode, user } = useUser()
 
   const [composioApiKeyInput, setComposioApiKeyInput] = useState('')
   const [composioUserIdInput, setComposioUserIdInput] = useState('')
@@ -455,21 +457,22 @@ function ComposioStep({ onCanProceedChange, saveRef }: ComposioStepProps) {
   const [isSaving, setIsSaving] = useState(false)
 
   const composioApiKeyStatus = settings?.apiKeyStatus?.composio
-  const hasComposioUserId = !!settings?.composioUserId
+  // In auth mode, user ID is automatic (from the logged-in user)
+  const hasComposioUserId = isAuthMode ? !!user?.id : !!settings?.composioUserId
   const isComposioConfigured = composioApiKeyStatus?.isConfigured && hasComposioUserId
-  const hasInput = !!(composioApiKeyInput.trim() || composioUserIdInput.trim())
+  const hasInput = !!(composioApiKeyInput.trim() || (!isAuthMode && composioUserIdInput.trim()))
 
   useEffect(() => {
     onCanProceedChange(!!(isComposioConfigured || hasInput) && !isSaving)
   }, [isComposioConfigured, hasInput, isSaving, onCanProceedChange])
 
   const handleSave = async () => {
-    if (!composioApiKeyInput.trim() && !composioUserIdInput.trim()) return
+    if (!composioApiKeyInput.trim() && (isAuthMode || !composioUserIdInput.trim())) return
     setIsSaving(true)
     try {
       const updates: { composioApiKey?: string; composioUserId?: string } = {}
       if (composioApiKeyInput.trim()) updates.composioApiKey = composioApiKeyInput.trim()
-      if (composioUserIdInput.trim()) updates.composioUserId = composioUserIdInput.trim()
+      if (!isAuthMode && composioUserIdInput.trim()) updates.composioUserId = composioUserIdInput.trim()
       await updateSettings.mutateAsync({ apiKeys: updates })
       setComposioApiKeyInput('')
       setComposioUserIdInput('')
@@ -540,12 +543,15 @@ function ComposioStep({ onCanProceedChange, saveRef }: ComposioStepProps) {
             <Input
               id="wizard-composio-userid"
               type="text"
-              value={composioUserIdInput}
+              value={isAuthMode ? (user?.id ?? '') : composioUserIdInput}
               onChange={(e) => setComposioUserIdInput(e.target.value)}
               placeholder="Enter your Composio user ID (e.g., your email)"
+              disabled={isAuthMode}
             />
             <p className="text-xs text-muted-foreground">
-              Your unique identifier in Composio. Can be any string.
+              {isAuthMode
+                ? 'Automatically set from your account.'
+                : 'Your unique identifier in Composio. Can be any string.'}
             </p>
           </div>
         </>
