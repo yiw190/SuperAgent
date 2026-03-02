@@ -3,10 +3,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { existsSync } from 'fs'
 import api from '../api'
-import { containerManager } from '@shared/lib/container/container-manager'
-import { stopAllProviders } from '../main/host-browser'
-import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
-import { autoSleepMonitor } from '@shared/lib/scheduler/auto-sleep-monitor'
+import { shutdownServices } from '@shared/lib/startup'
 import { findAvailablePort } from '../main/find-port'
 
 const app = new Hono()
@@ -32,20 +29,12 @@ async function gracefulShutdown(signal: string) {
 
   console.log(`\nReceived ${signal}, shutting down gracefully...`)
 
-  // Stop all host browser instances
-  await stopAllProviders()
-
-  // Stop the task scheduler and auto-sleep monitor
-  taskScheduler.stop()
-  autoSleepMonitor.stop()
-  containerManager.stopStatusSync()
-
-  // Stop all containers
+  // Stop all background services and containers
   try {
-    await containerManager.stopAll()
-    console.log('All containers stopped.')
+    await shutdownServices()
+    console.log('All services stopped.')
   } catch (error) {
-    console.error('Error stopping containers:', error)
+    console.error('Error stopping services:', error)
   }
 
   // Close the server

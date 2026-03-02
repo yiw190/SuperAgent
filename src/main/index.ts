@@ -4,7 +4,7 @@ import { EventSource } from 'eventsource'
 import { createTray, destroyTray, updateTrayWindow, setTrayVisible } from './tray'
 import { createAppMenu, updateAppMenuWindow, destroyAppMenu } from './app-menu'
 import { getSettings } from '@shared/lib/config/settings'
-import { stopAllProviders, detectAllProviders } from './host-browser'
+import { detectAllProviders } from './host-browser'
 import { registerUpdateHandlers, initAutoUpdater, updateAutoUpdaterWindow } from './auto-updater'
 
 // In dev mode, use a separate data directory to avoid mixing with production data.
@@ -28,10 +28,7 @@ registerUpdateHandlers()
 // Now safe to import API (env var is set)
 import { serve } from '@hono/node-server'
 import api from '../api'
-import { containerManager } from '@shared/lib/container/container-manager'
-import { taskScheduler } from '@shared/lib/scheduler/task-scheduler'
-import { autoSleepMonitor } from '@shared/lib/scheduler/auto-sleep-monitor'
-import { initializeServices } from '@shared/lib/startup'
+import { initializeServices, shutdownServices } from '@shared/lib/startup'
 import { findAvailablePort } from './find-port'
 import { setupBrowserStreamProxy } from './browser-stream-proxy'
 
@@ -396,20 +393,12 @@ async function gracefulShutdown() {
   destroyTray()
   destroyAppMenu()
 
-  // Stop all host browser instances
-  await stopAllProviders()
-
-  // Stop the task scheduler, auto-sleep monitor, and status sync
-  taskScheduler.stop()
-  autoSleepMonitor.stop()
-  containerManager.stopStatusSync()
-
-  // Stop all containers
+  // Stop all background services and containers
   try {
-    await containerManager.stopAll()
-    console.log('All containers stopped.')
+    await shutdownServices()
+    console.log('All services stopped.')
   } catch (error) {
-    console.error('Error stopping containers:', error)
+    console.error('Error stopping services:', error)
   }
 
   // Close the API server

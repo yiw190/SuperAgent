@@ -35,9 +35,11 @@ export default defineConfig({
           })
         }
         server.httpServer?.on('close', async () => {
-          const { containerManager } = await import('./src/shared/lib/container/container-manager')
-          await containerManager.stopAll()
-          console.log('All containers stopped.')
+          const { shutdownServices } = await server.ssrLoadModule(
+            path.resolve(__dirname, 'src/shared/lib/startup.ts'),
+          )
+          await shutdownServices()
+          console.log('All services stopped.')
         })
       },
     },

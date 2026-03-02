@@ -1,6 +1,7 @@
 import { containerManager } from './container/container-manager'
 import { taskScheduler } from './scheduler/task-scheduler'
 import { autoSleepMonitor } from './scheduler/auto-sleep-monitor'
+import { stopAllProviders } from '../../main/host-browser'
 import { listAgents } from './services/agent-service'
 import { isAuthMode } from './auth/mode'
 import { validateAuthModeStartup } from './auth/startup-validation'
@@ -40,4 +41,21 @@ export async function initializeServices() {
   autoSleepMonitor.start().catch((error) => {
     console.error('Failed to start auto-sleep monitor:', error)
   })
+}
+
+/**
+ * Shut down all background services started by initializeServices().
+ *
+ * Called from three places:
+ * - main/index.ts: Electron graceful shutdown
+ * - web/server.ts: standalone web server shutdown
+ * - vite.config.ts: Vite dev server close
+ */
+export async function shutdownServices() {
+  await stopAllProviders()
+  taskScheduler.stop()
+  autoSleepMonitor.stop()
+  containerManager.stopStatusSync()
+  containerManager.stopHealthMonitor()
+  await containerManager.stopAll()
 }
