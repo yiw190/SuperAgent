@@ -35,6 +35,16 @@ export function getAuth() {
       emailAndPassword: {
         enabled: true,
       },
+      user: {
+        additionalFields: {
+          mustChangePassword: {
+            type: 'boolean',
+            required: false,
+            defaultValue: false,
+            input: false, // users cannot set this on self-registration
+          },
+        },
+      },
       plugins: [
         admin(),
       ],
@@ -69,6 +79,31 @@ export function getAuth() {
                 }
               } catch (err) {
                 console.error('Failed to check/set admin role:', err)
+              }
+            },
+          },
+        },
+        account: {
+          update: {
+            after: async (account) => {
+              // Auto-clear mustChangePassword when a user changes their password.
+              // The changePassword endpoint calls updateAccount() which returns the
+              // full row via .returning(), so we have userId and providerId here.
+              // Admin setUserPassword uses updateMany (returns count, not row) — no-op.
+              try {
+                if (account && account.providerId === 'credential' && account.userId) {
+                  db.update(schema.user)
+                    .set({ mustChangePassword: false })
+                    .where(
+                      and(
+                        eq(schema.user.id, account.userId as string),
+                        eq(schema.user.mustChangePassword, true)
+                      )
+                    )
+                    .run()
+                }
+              } catch (err) {
+                console.error('Failed to clear mustChangePassword:', err)
               }
             },
           },

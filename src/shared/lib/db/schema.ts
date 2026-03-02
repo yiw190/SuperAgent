@@ -25,6 +25,7 @@ export const user = sqliteTable('user', {
   banned: integer('banned', { mode: 'boolean' }).default(false),
   banReason: text('ban_reason'),
   banExpires: integer('ban_expires', { mode: 'timestamp_ms' }),
+  mustChangePassword: integer('must_change_password', { mode: 'boolean' }).default(false),
 })
 
 export const authSession = sqliteTable('session', {

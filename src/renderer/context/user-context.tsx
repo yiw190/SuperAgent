@@ -15,6 +15,7 @@ interface User {
   name: string
   email: string
   role?: string
+  mustChangePassword?: boolean
 }
 
 interface UserContextValue {
@@ -23,6 +24,7 @@ interface UserContextValue {
   isAdmin: boolean
   isAuthMode: boolean
   isPending: boolean
+  mustChangePassword: boolean
   agentRole: (agentSlug: string) => AgentRole | null
   agentMemberCount: (agentSlug: string) => number
   canAccessAgent: (agentSlug: string) => boolean
@@ -71,6 +73,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = isAuthMode && sessionUser !== null
   const isAdmin = isAuthenticated && sessionUser?.role === 'admin'
+  const mustChangePassword = isAuthenticated && sessionUser?.mustChangePassword === true
 
   // Fetch agent roles when authenticated
   const { data: agentRoles, isFetched: rolesFetched } = useAgentRoles(isAuthenticated)
@@ -138,6 +141,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       isAdmin,
       isAuthMode,
       isPending,
+      mustChangePassword,
       agentRole,
       agentMemberCount,
       canAccessAgent,
@@ -151,6 +155,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       isAdmin,
       isPending,
+      mustChangePassword,
       agentRole,
       agentMemberCount,
       canAccessAgent,

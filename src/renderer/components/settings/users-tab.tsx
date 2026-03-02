@@ -21,8 +21,10 @@ import {
 import { authClient } from '@renderer/lib/auth-client'
 import { useUser } from '@renderer/context/user-context'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Search, Ban, Trash2, ShieldCheck, ShieldAlert } from 'lucide-react'
+import { Loader2, Search, Ban, Trash2, ShieldCheck, ShieldAlert, UserPlus } from 'lucide-react'
 import { cn } from '@shared/lib/utils/cn'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
+import { InviteUserDialog } from './invite-user-dialog'
 
 interface AdminUser {
   id: string
@@ -31,6 +33,7 @@ interface AdminUser {
   role?: string | null
   banned?: boolean | null
   banReason?: string | null
+  mustChangePassword?: boolean | null
   createdAt: Date
 }
 
@@ -44,6 +47,8 @@ export function UsersTab() {
     const timer = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(timer)
   }, [search])
+
+  const [inviteOpen, setInviteOpen] = useState(false)
 
   const [confirmAction, setConfirmAction] = useState<{
     type: 'delete' | 'ban'
@@ -136,6 +141,15 @@ export function UsersTab() {
 
   return (
     <div className="space-y-4">
+      {/* Header with Invite button */}
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Users</span>
+        <Button variant="outline" size="sm" onClick={() => setInviteOpen(true)}>
+          <UserPlus className="h-4 w-4 mr-1.5" />
+          Invite
+        </Button>
+      </div>
+
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -193,6 +207,14 @@ export function UsersTab() {
                   )}
                   {user.banned && (
                     <span className="text-[10px] text-destructive shrink-0">banned</span>
+                  )}
+                  {user.mustChangePassword && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="shrink-0 h-2 w-2 rounded-full bg-amber-500" />
+                      </TooltipTrigger>
+                      <TooltipContent>Must change password on next login</TooltipContent>
+                    </Tooltip>
                   )}
                 </div>
 
@@ -280,6 +302,13 @@ export function UsersTab() {
           {data.total} user{data.total !== 1 ? 's' : ''} total
         </p>
       )}
+
+      {/* Invite Dialog */}
+      <InviteUserDialog
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        onInvited={invalidateUsers}
+      />
 
       {/* Confirmation Dialog */}
       <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>

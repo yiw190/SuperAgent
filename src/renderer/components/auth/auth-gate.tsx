@@ -1,5 +1,6 @@
 import { useUser } from '@renderer/context/user-context'
 import { AuthPage } from './auth-page'
+import { ForcePasswordChange } from './force-password-change'
 
 function LoadingScreen() {
   return (
@@ -10,10 +11,11 @@ function LoadingScreen() {
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthMode, isAuthenticated, isPending } = useUser()
+  const { isAuthMode, isAuthenticated, isPending, mustChangePassword } = useUser()
 
   if (!isAuthMode) return <>{children}</>
   if (isPending) return <LoadingScreen />
   if (!isAuthenticated) return <AuthPage />
+  if (mustChangePassword) return <ForcePasswordChange />
   return <>{children}</>
 }
