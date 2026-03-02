@@ -159,8 +159,8 @@ export function BrowserPreview({ agentSlug, sessionId, browserActive, isActive }
     }
 
     const baseUrl = getApiBaseUrl()
-    const wsProtocol = baseUrl.startsWith('https') ? 'wss' : 'ws'
-    const wsHost = baseUrl.replace(/^https?:\/\//, '')
+    const wsProtocol = baseUrl.startsWith('https') || window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const wsHost = baseUrl ? baseUrl.replace(/^https?:\/\//, '') : window.location.host
     const wsUrl = `${wsProtocol}://${wsHost}/api/agents/${agentSlug}/browser/stream`
 
     const ws = new WebSocket(wsUrl)

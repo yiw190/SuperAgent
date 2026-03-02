@@ -28,6 +28,12 @@ export default defineConfig({
             process.env.PORT = String(addr.port)
           }
         })
+        // Set up WebSocket upgrade handler for browser stream proxy
+        if (server.httpServer) {
+          server.ssrLoadModule(path.resolve(__dirname, 'src/main/browser-stream-proxy.ts')).then(({ setupBrowserStreamProxy }) => {
+            setupBrowserStreamProxy(server.httpServer as any)
+          })
+        }
         server.httpServer?.on('close', async () => {
           const { containerManager } = await import('./src/shared/lib/container/container-manager')
           await containerManager.stopAll()
