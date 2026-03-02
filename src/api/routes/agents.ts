@@ -77,13 +77,76 @@ import {
   collectAgentRequiredEnvVars,
 } from '@shared/lib/services/agent-template-service'
 import { withRetry } from '@shared/lib/utils/retry'
-import { transformMessages } from '@shared/lib/utils/message-transform'
+import { transformMessages, type TransformedMessage, type TransformedItem } from '@shared/lib/utils/message-transform'
 import { getEffectiveAnthropicApiKey, getEffectiveModels, getEffectiveAgentLimits, getCustomEnvVars, getSettings } from '@shared/lib/config/settings'
 import { revokeProxyToken } from '@shared/lib/proxy/token-store'
 import { getAgentWorkspaceDir } from '@shared/lib/utils/file-storage'
 import * as fs from 'fs'
 import { Readable } from 'stream'
 import * as path from 'path'
+
+/**
+ * For interrupted Task tool calls (no result), discover the subagent ID
+ * by scanning the subagents directory so the UI can still show subagent messages.
+ */
+export async function resolveInterruptedSubagents(
+  items: TransformedItem[],
+  agentSlug: string,
+  sessionId: string
+): Promise<void> {
+  // Collect Task tool calls, separating resolved from unresolved
+  const resolvedAgentIds = new Set<string>()
+  const unresolvedTaskCalls: TransformedMessage['toolCalls'][number][] = []
+
+  for (const item of items) {
+    if (item.type !== 'assistant') continue
+    const msg = item as TransformedMessage
+    for (const tc of msg.toolCalls) {
+      if (tc.name !== 'Task') continue
+      if (tc.subagent?.agentId) {
+        resolvedAgentIds.add(tc.subagent.agentId)
+      } else {
+        unresolvedTaskCalls.push(tc)
+      }
+    }
+  }
+
+  if (unresolvedTaskCalls.length === 0) return
+
+  // Scan the subagents directory for available files
+  const sessionsDir = getAgentSessionsDir(agentSlug)
+  const subagentsDir = path.join(sessionsDir, sessionId, 'subagents')
+  let files: string[]
+  try {
+    files = await fs.promises.readdir(subagentsDir)
+  } catch {
+    return // No subagents directory
+  }
+
+  // Get unmatched subagent files sorted by mtime (creation order)
+  const unmatchedFiles: { id: string; mtime: number }[] = []
+  for (const file of files) {
+    if (!file.startsWith('agent-') || !file.endsWith('.jsonl')) continue
+    const id = file.replace('agent-', '').replace('.jsonl', '')
+    if (resolvedAgentIds.has(id)) continue
+    try {
+      const stat = await fs.promises.stat(path.join(subagentsDir, file))
+      unmatchedFiles.push({ id, mtime: stat.mtimeMs })
+    } catch {
+      // skip unreadable files
+    }
+  }
+
+  unmatchedFiles.sort((a, b) => a.mtime - b.mtime)
+
+  // Match unresolved Task calls to unmatched subagent files in order
+  for (let i = 0; i < unresolvedTaskCalls.length && i < unmatchedFiles.length; i++) {
+    unresolvedTaskCalls[i].subagent = {
+      agentId: unmatchedFiles[i].id,
+      status: 'cancelled',
+    }
+  }
+}
 
 const agents = new Hono()
 
@@ -846,6 +909,9 @@ agents.get('/:id/sessions/:sessionId/messages', AgentRead(), async (c) => {
     const messages = await getSessionMessagesWithCompact(agentSlug, sessionId)
     const filtered = messages.filter((m) => !('isMeta' in m && m.isMeta))
     const transformed = transformMessages(filtered)
+
+    // Discover subagent IDs for interrupted Task tool calls that have no result
+    await resolveInterruptedSubagents(transformed, agentSlug, sessionId)
 
     return c.json(transformed)
   } catch (error) {
