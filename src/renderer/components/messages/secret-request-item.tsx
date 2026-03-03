@@ -94,7 +94,7 @@ export function SecretRequestItem({
   // Completed state - show minimal info
   if (status === 'provided' || status === 'declined') {
     return (
-      <div className="border rounded-md bg-muted/30 text-sm">
+      <div className="border rounded-md bg-muted/30 text-sm" data-testid="secret-request-completed" data-status={status}>
         <div className="flex items-center gap-2 px-3 py-2">
           <Key
             className={cn(
@@ -143,7 +143,7 @@ export function SecretRequestItem({
 
   // Pending/submitting state - show input form
   return (
-    <div className="border rounded-md bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800 text-sm">
+    <div className="border rounded-md bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800 text-sm" data-testid="secret-request" data-secret-name={secretName}>
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
         <div className="h-8 w-8 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center shrink-0">
@@ -200,6 +200,7 @@ export function SecretRequestItem({
               disabled={!value.trim() || status === 'submitting'}
               size="sm"
               className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-testid="secret-provide-btn"
             >
               {status === 'submitting' ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -215,6 +216,7 @@ export function SecretRequestItem({
               variant="outline"
               size="sm"
               className="border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900"
+              data-testid="secret-decline-btn"
             >
               <X className="h-4 w-4" />
               <span className="ml-1">Decline</span>

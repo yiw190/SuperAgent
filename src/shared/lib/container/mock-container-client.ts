@@ -289,6 +289,130 @@ export class ToolUseScenario implements MockScenario {
 }
 
 /**
+ * User input request scenario - simulates the agent emitting tool calls that
+ * request user input (secrets, questions, etc.). The session stays active until
+ * all inputs are resolved/rejected via fetch().
+ */
+export interface UserInputTool {
+  name: string
+  input: Record<string, unknown>
+}
+
+export class UserInputRequestScenario implements MockScenario {
+  constructor(private tools: UserInputTool[]) {}
+
+  execute(sessionId: string, client: MockContainerClient, userMessage: string): void {
+    let delay = 50
+    const toolIds: string[] = []
+
+    // Pre-generate tool IDs so we can register pending inputs immediately
+    for (let i = 0; i < this.tools.length; i++) {
+      toolIds.push(`tool_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`)
+    }
+
+    // Register pending inputs BEFORE emitting any events, so that
+    // resolve/reject calls from the API can find and decrement the count.
+    client.registerPendingInputs(sessionId, this.tools.length)
+
+    // Start assistant message
+    setTimeout(() => {
+      client.emitStreamMessage(sessionId, {
+        type: 'stream_event',
+        content: { type: 'stream_event', event: { type: 'message_start' } },
+      })
+    }, delay)
+    delay += 50
+
+    // Emit each tool use block
+    for (let toolIndex = 0; toolIndex < this.tools.length; toolIndex++) {
+      const tool = this.tools[toolIndex]
+      const capturedToolId = toolIds[toolIndex]
+      const capturedTool = tool
+      setTimeout(() => {
+        client.emitStreamMessage(sessionId, {
+          type: 'stream_event',
+          content: {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_start',
+              content_block: {
+                type: 'tool_use',
+                id: capturedToolId,
+                name: capturedTool.name,
+              },
+            },
+          },
+        })
+      }, delay)
+      delay += 50
+
+      // content_block_delta (input_json_delta)
+      setTimeout(() => {
+        client.emitStreamMessage(sessionId, {
+          type: 'stream_event',
+          content: {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              delta: {
+                type: 'input_json_delta',
+                partial_json: JSON.stringify(capturedTool.input),
+              },
+            },
+          },
+        })
+      }, delay)
+      delay += 50
+
+      // content_block_stop — triggers MessagePersister to detect user input tools
+      setTimeout(() => {
+        client.emitStreamMessage(sessionId, {
+          type: 'stream_event',
+          content: { type: 'stream_event', event: { type: 'content_block_stop' } },
+        })
+      }, delay)
+      delay += 100
+    }
+
+    // message_stop
+    setTimeout(() => {
+      client.emitStreamMessage(sessionId, {
+        type: 'stream_event',
+        content: { type: 'stream_event', event: { type: 'message_stop' } },
+      })
+    }, delay)
+    delay += 50
+
+    // Write JSONL entries (for message-based recovery on page refresh)
+    const capturedToolIds = [...toolIds]
+    const capturedTools = [...this.tools]
+    const finalDelay = delay
+    setTimeout(() => {
+      // Write user message
+      client.writeJsonlEntry(sessionId, {
+        type: 'user',
+        message: { content: userMessage },
+        timestamp: new Date().toISOString(),
+      })
+
+      // Write assistant message with all tool use blocks
+      client.writeJsonlEntry(sessionId, {
+        type: 'assistant',
+        message: {
+          content: capturedTools.map((tool, i) => ({
+            type: 'tool_use',
+            id: capturedToolIds[i],
+            name: tool.name,
+            input: tool.input,
+          })),
+        },
+        timestamp: new Date().toISOString(),
+      })
+    }, finalDelay)
+  }
+}
+
+/**
  * Mock implementation of ContainerClient for E2E testing.
  * Simulates container behavior without requiring Docker/Podman.
  */
@@ -307,6 +431,50 @@ export class MockContainerClient extends EventEmitter implements ContainerClient
       'This is a delayed mock response.',
       3000
     )],
+    // Register user input request scenarios for E2E testing
+    ['ask secret', new UserInputRequestScenario([
+      {
+        name: 'mcp__user-input__request_secret',
+        input: { secretName: 'OPENAI_API_KEY', reason: 'Needed for API access' },
+      },
+    ])],
+    ['ask question', new UserInputRequestScenario([
+      {
+        name: 'AskUserQuestion',
+        input: {
+          questions: [{
+            question: 'Which database should we use?',
+            header: 'Database',
+            options: [
+              { label: 'PostgreSQL', description: 'Reliable relational database' },
+              { label: 'MongoDB', description: 'Flexible document store' },
+              { label: 'SQLite', description: 'Lightweight embedded database' },
+            ],
+            multiSelect: false,
+          }],
+        },
+      },
+    ])],
+    ['ask parallel', new UserInputRequestScenario([
+      {
+        name: 'mcp__user-input__request_secret',
+        input: { secretName: 'DATABASE_URL', reason: 'Connection string for the database' },
+      },
+      {
+        name: 'AskUserQuestion',
+        input: {
+          questions: [{
+            question: 'Which cloud provider do you prefer?',
+            header: 'Cloud',
+            options: [
+              { label: 'AWS', description: 'Amazon Web Services' },
+              { label: 'GCP', description: 'Google Cloud Platform' },
+            ],
+            multiSelect: false,
+          }],
+        },
+      },
+    ])],
   ])
   static defaultScenario: MockScenario = new SimpleTextResponseScenario(
     'This is a mock response from the E2E test container.'
@@ -319,6 +487,8 @@ export class MockContainerClient extends EventEmitter implements ContainerClient
   private streamCallbacks: Map<string, Set<(message: StreamMessage) => void>> = new Map()
   // Map from containerSessionId to our internal sessionId (which is the same as the API sessionId)
   private sessionToApiSession: Map<string, string> = new Map()
+  // Track pending user input requests per session for auto-completion
+  private pendingInputCounts: Map<string, number> = new Map()
 
   constructor(config: ContainerConfig) {
     super()
@@ -362,6 +532,15 @@ export class MockContainerClient extends EventEmitter implements ContainerClient
    */
   static clearScenarios(): void {
     MockContainerClient.scenarios.clear()
+  }
+
+  /**
+   * Register pending input count for a session. When all inputs are resolved/rejected
+   * via fetch(), the session emits a result event to complete.
+   */
+  registerPendingInputs(sessionId: string, count: number): void {
+    this.pendingInputCounts.set(sessionId, count)
+    console.log(`[MockContainerClient] Registered ${count} pending inputs for session ${sessionId}`)
   }
 
   /**
@@ -426,6 +605,43 @@ export class MockContainerClient extends EventEmitter implements ContainerClient
         headers: { 'Content-Type': 'application/json' },
       })
     }
+
+    // Handle input resolve/reject — decrement pending count and complete session when all done
+    const resolveMatch = fetchPath.match(/^\/inputs\/[^/]+\/(resolve|reject)$/)
+    if (resolveMatch) {
+      console.log(`[MockContainerClient] Input ${resolveMatch[1]}: ${fetchPath}`)
+      // Find the session with pending inputs (we only have one active at a time in tests)
+      for (const [sessionId, count] of this.pendingInputCounts) {
+        if (count > 0) {
+          const remaining = count - 1
+          this.pendingInputCounts.set(sessionId, remaining)
+          console.log(`[MockContainerClient] Session ${sessionId}: ${remaining} pending inputs remaining`)
+          if (remaining === 0) {
+            this.pendingInputCounts.delete(sessionId)
+            // Complete the session after a short delay
+            setTimeout(() => {
+              this.writeJsonlEntry(sessionId, {
+                type: 'assistant',
+                message: {
+                  content: [{ type: 'text', text: 'Thank you for providing the information.' }],
+                },
+                timestamp: new Date().toISOString(),
+              })
+              this.emitStreamMessage(sessionId, {
+                type: 'result',
+                content: { type: 'result', subtype: 'success' },
+              })
+            }, 200)
+          }
+          break
+        }
+      }
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     return new Response(JSON.stringify({}), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

@@ -169,4 +169,102 @@ export class SessionPage {
   async isAgentWorking(): Promise<boolean> {
     return await this.getStopButton().isVisible()
   }
+
+  // --- User Input Request Helpers ---
+
+  /**
+   * Wait for a secret request to appear in the UI
+   */
+  async waitForSecretRequest(secretName?: string, timeout = 15000) {
+    if (secretName) {
+      await expect(
+        this.page.locator(`[data-testid="secret-request"][data-secret-name="${secretName}"]`)
+      ).toBeVisible({ timeout })
+    } else {
+      await expect(this.page.locator('[data-testid="secret-request"]').first()).toBeVisible({ timeout })
+    }
+  }
+
+  /**
+   * Get all visible secret request items
+   */
+  getSecretRequests() {
+    return this.page.locator('[data-testid="secret-request"]')
+  }
+
+  /**
+   * Fill in and provide a secret value
+   */
+  async provideSecret(value: string, secretName?: string) {
+    const container = secretName
+      ? this.page.locator(`[data-testid="secret-request"][data-secret-name="${secretName}"]`)
+      : this.page.locator('[data-testid="secret-request"]').first()
+
+    await container.locator('input[placeholder="Enter secret value..."]').fill(value)
+    await container.locator('[data-testid="secret-provide-btn"]').click()
+  }
+
+  /**
+   * Decline a secret request
+   */
+  async declineSecret(secretName?: string) {
+    const container = secretName
+      ? this.page.locator(`[data-testid="secret-request"][data-secret-name="${secretName}"]`)
+      : this.page.locator('[data-testid="secret-request"]').first()
+
+    await container.locator('[data-testid="secret-decline-btn"]').click()
+  }
+
+  /**
+   * Wait for a question request to appear in the UI
+   */
+  async waitForQuestionRequest(timeout = 15000) {
+    await expect(this.page.locator('[data-testid="question-request"]').first()).toBeVisible({ timeout })
+  }
+
+  /**
+   * Get all visible question request items
+   */
+  getQuestionRequests() {
+    return this.page.locator('[data-testid="question-request"]')
+  }
+
+  /**
+   * Select a question option by its label text and submit
+   */
+  async answerQuestion(optionLabel: string) {
+    const container = this.page.locator('[data-testid="question-request"]').first()
+
+    // Click the label containing the option text (the label wraps both radio/checkbox and text)
+    await container.locator('label').filter({ hasText: optionLabel }).click()
+
+    // Click submit
+    await container.locator('[data-testid="question-submit-btn"]').click()
+  }
+
+  /**
+   * Decline a question request
+   */
+  async declineQuestion() {
+    const container = this.page.locator('[data-testid="question-request"]').first()
+    await container.locator('[data-testid="question-decline-btn"]').click()
+  }
+
+  /**
+   * Wait for a completed secret request with specific status
+   */
+  async waitForSecretRequestCompleted(status: 'provided' | 'declined', timeout = 10000) {
+    await expect(
+      this.page.locator(`[data-testid="secret-request-completed"][data-status="${status}"]`).first()
+    ).toBeVisible({ timeout })
+  }
+
+  /**
+   * Wait for a completed question request with specific status
+   */
+  async waitForQuestionRequestCompleted(status: 'answered' | 'declined', timeout = 10000) {
+    await expect(
+      this.page.locator(`[data-testid="question-request-completed"][data-status="${status}"]`).first()
+    ).toBeVisible({ timeout })
+  }
 }

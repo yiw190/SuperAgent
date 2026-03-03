@@ -191,7 +191,7 @@ export function QuestionRequestItem({
   // Completed state - show minimal info
   if (status === 'answered' || status === 'declined') {
     return (
-      <div className="border rounded-md bg-muted/30 text-sm">
+      <div className="border rounded-md bg-muted/30 text-sm" data-testid="question-request-completed" data-status={status}>
         <div className="flex items-center gap-2 px-3 py-2">
           <HelpCircle
             className={cn(
@@ -236,7 +236,7 @@ export function QuestionRequestItem({
 
   // Pending/submitting state - show question form
   return (
-    <div className="border rounded-md bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm">
+    <div className="border rounded-md bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-800 text-sm" data-testid="question-request">
       <div className="flex items-start gap-3 p-3">
         {/* Icon */}
         <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
@@ -339,6 +339,7 @@ export function QuestionRequestItem({
               disabled={!areAllQuestionsAnswered() || status === 'submitting'}
               size="sm"
               className="bg-blue-600 hover:bg-blue-700 text-white"
+              data-testid="question-submit-btn"
             >
               {status === 'submitting' ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -354,6 +355,7 @@ export function QuestionRequestItem({
               variant="outline"
               size="sm"
               className="border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900"
+              data-testid="question-decline-btn"
             >
               <X className="h-4 w-4" />
               <span className="ml-1">Decline</span>
