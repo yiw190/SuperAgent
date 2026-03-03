@@ -13,9 +13,6 @@ export default defineConfig({
   workers: 1,  // Use single worker to avoid database conflicts
   reporter: [['html', { open: 'never' }], ['list']],
 
-  // Global setup to reset test data before all tests
-  globalSetup: './e2e/global-setup.ts',
-
   use: {
     baseURL: 'http://localhost:3000',
     trace: 'on-first-retry',
@@ -34,7 +31,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `rm -f "${e2eDataDir}/superagent.db" "${e2eDataDir}/superagent.db-wal" "${e2eDataDir}/superagent.db-shm" && SUPERAGENT_DATA_DIR="${e2eDataDir}" E2E_MOCK=true PORT=3000 npm run dev:web`,
+    command: `SUPERAGENT_DATA_DIR="${e2eDataDir}" node e2e/setup-e2e-data.js && SUPERAGENT_DATA_DIR="${e2eDataDir}" E2E_MOCK=true PORT=3000 npm run dev:web`,
     url: 'http://localhost:3000/api/settings',  // Wait for API to be ready, not just Vite
     reuseExistingServer: false,  // Always start fresh for E2E tests
     timeout: 120000,

@@ -12,8 +12,6 @@ export default defineConfig({
   workers: 1,
   reporter: [['html', { open: 'never' }], ['list']],
 
-  globalSetup: './e2e/auth/global-setup.ts',
-
   use: {
     baseURL: 'http://localhost:3001',
     trace: 'on-first-retry',
@@ -28,7 +26,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: `rm -f "${e2eDataDir}/superagent.db" "${e2eDataDir}/superagent.db-wal" "${e2eDataDir}/superagent.db-shm" && SUPERAGENT_DATA_DIR="${e2eDataDir}" E2E_MOCK=true AUTH_MODE=true ANTHROPIC_API_KEY=sk-ant-e2e-mock PORT=3001 npm run dev:web`,
+    command: `SUPERAGENT_DATA_DIR="${e2eDataDir}" AUTH_MODE=true node e2e/setup-e2e-data.js && SUPERAGENT_DATA_DIR="${e2eDataDir}" E2E_MOCK=true AUTH_MODE=true ANTHROPIC_API_KEY=sk-ant-e2e-mock PORT=3001 npm run dev:web`,
     url: 'http://localhost:3001/api/settings',
     reuseExistingServer: false,
     timeout: 120000,
