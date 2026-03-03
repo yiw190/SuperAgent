@@ -25,12 +25,12 @@ interface AuthConfig {
 }
 
 const DEFAULT_AUTH_CONFIG: AuthConfig = {
-  signupMode: 'invitation_only',
+  signupMode: 'open',
   allowLocalAuth: true,
   allowSocialAuth: false,
-  passwordMinLength: 12,
-  passwordRequireComplexity: true,
-  requireAdminApproval: true,
+  passwordMinLength: 8,
+  passwordRequireComplexity: false,
+  requireAdminApproval: false,
   hasUsers: false,
 }
 
@@ -197,8 +197,8 @@ function SignUpForm({ onSwitchToSignIn, config }: { onSwitchToSignIn: () => void
         } else {
           setServerError(msg)
         }
-      } else if (config.requireAdminApproval) {
-        // Signup succeeded but user may be auto-banned
+      } else if (config.requireAdminApproval && config.hasUsers) {
+        // Signup succeeded but user may be auto-banned (only for non-first users)
         setPendingApproval(true)
       }
     } catch {
