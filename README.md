@@ -16,7 +16,6 @@ SuperAgent is a super app for building and running personal agents. You can crea
 - **Create Shared Skillsets** - as agents create skills for your work - creaate skillsets to share them with your team!
 
 **Run as:**
-
 - **Web App** - you can run super agent in server mode and access it via the web. Great if you have a computer that can run it 24/7
 - **Desktop App** - you can download and run superagent locally in your machine as a desktop app.
 
