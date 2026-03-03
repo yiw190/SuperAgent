@@ -355,7 +355,7 @@ describe('secrets service integration', () => {
       expect(secrets.length).toBe(2)
     })
 
-    it('creates .env with restrictive permissions', async () => {
+    it('creates .env with world-readable permissions for agent containers', async () => {
       await setSecret('test-agent', {
         key: 'Secret',
         envVar: 'SECRET',
@@ -371,8 +371,10 @@ describe('secrets service integration', () => {
       )
       const stats = await fs.promises.stat(envPath)
 
-      // Check owner read/write only (0o600)
-      expect(stats.mode & 0o777).toBe(0o600)
+      // Mode 0o666 is requested so non-root agent containers can read secrets.
+      // Effective permissions depend on process umask.
+      const umask = process.umask()
+      expect(stats.mode & 0o777).toBe(0o666 & ~umask)
     })
   })
 
