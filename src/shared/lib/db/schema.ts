@@ -165,6 +165,25 @@ export const scheduledTasks = sqliteTable('scheduled_tasks', {
   cancelledAt: integer('cancelled_at', { mode: 'timestamp_ms' }),
 })
 
+// Session pauses - agent-initiated conversation pauses with scheduled resume
+export const sessionPauses = sqliteTable('session_pauses', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull(),
+  agentSlug: text('agent_slug').notNull(),
+  toolUseId: text('tool_use_id').notNull(),
+  duration: text('duration').notNull(),
+  reason: text('reason'),
+  resumeAt: integer('resume_at', { mode: 'timestamp_ms' }).notNull(),
+  status: text('status', { enum: ['pending', 'completed', 'cancelled', 'failed'] })
+    .notNull()
+    .default('pending'),
+  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+  completedAt: integer('completed_at', { mode: 'timestamp_ms' }),
+}, (table) => ({
+  statusResumeAtIdx: index('session_pauses_status_resume_at_idx').on(table.status, table.resumeAt),
+  sessionIdIdx: index('session_pauses_session_id_idx').on(table.sessionId),
+}))
+
 // Notifications - user notifications for session events
 export const notifications = sqliteTable('notifications', {
   id: text('id').primaryKey(),
@@ -285,6 +304,8 @@ export type AgentConnectedAccount = typeof agentConnectedAccounts.$inferSelect
 export type NewAgentConnectedAccount = typeof agentConnectedAccounts.$inferInsert
 export type ScheduledTask = typeof scheduledTasks.$inferSelect
 export type NewScheduledTask = typeof scheduledTasks.$inferInsert
+export type SessionPause = typeof sessionPauses.$inferSelect
+export type NewSessionPause = typeof sessionPauses.$inferInsert
 export type Notification = typeof notifications.$inferSelect
 export type NewNotification = typeof notifications.$inferInsert
 export type ProxyToken = typeof proxyTokens.$inferSelect

@@ -23,6 +23,10 @@ import {
 } from '@shared/lib/services/session-service'
 import { getSecretEnvVars } from '@shared/lib/services/secrets-service'
 import { agentExists } from '@shared/lib/services/agent-service'
+import {
+  getDuePauses,
+  markPauseCompleted,
+} from '@shared/lib/services/session-pause-service'
 
 
 class TaskScheduler {
@@ -47,10 +51,16 @@ class TaskScheduler {
     // Execute overdue tasks immediately on startup
     await this.executeOverdueTasks()
 
+    // Resume any overdue pauses immediately on startup
+    await this.resumeDuePauses()
+
     // Start periodic polling
     this.intervalId = setInterval(() => {
       this.executeOverdueTasks().catch((error) => {
         console.error('[TaskScheduler] Error in polling cycle:', error)
+      })
+      this.resumeDuePauses().catch((error) => {
+        console.error('[TaskScheduler] Error resuming pauses:', error)
       })
     }, this.pollIntervalMs)
 
@@ -213,6 +223,34 @@ class TaskScheduler {
       // Mark one-time task as executed
       await markTaskExecuted(task.id, sessionId)
       console.log(`[TaskScheduler] One-time task ${task.id} marked as executed`)
+    }
+  }
+
+  /**
+   * Resume all session pauses whose resumeAt has passed.
+   */
+  private async resumeDuePauses(): Promise<void> {
+    const duePauses = await getDuePauses()
+    if (duePauses.length === 0) return
+
+    console.log(`[TaskScheduler] Found ${duePauses.length} due pause(s) to resume`)
+
+    for (const pause of duePauses) {
+      const client = await containerManager.ensureRunning(pause.agentSlug)
+
+      await client.fetch(
+        `/inputs/${encodeURIComponent(pause.toolUseId)}/resolve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            value: `Pause complete (${pause.duration}). Continue with your task.`,
+          }),
+        }
+      )
+
+      await markPauseCompleted(pause.id)
+      console.log(`[TaskScheduler] Pause ${pause.id} resumed`)
     }
   }
 
