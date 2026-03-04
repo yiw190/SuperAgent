@@ -3,7 +3,6 @@ import { eq, and } from 'drizzle-orm'
 import { Authenticated, IsAdmin } from '../middleware/auth'
 import { db } from '@shared/lib/db'
 import { user, authAccount } from '@shared/lib/db/schema'
-import { hashPassword } from 'better-auth/crypto'
 
 const adminUsersRouter = new Hono()
 adminUsersRouter.use('*', Authenticated(), IsAdmin())
@@ -28,6 +27,7 @@ adminUsersRouter.post('/invite', async (c) => {
 
   try {
     const userId = crypto.randomUUID()
+    const { hashPassword } = await import('better-auth/crypto')
     const hashedPassword = await hashPassword(password)
     const now = new Date()
 
@@ -86,6 +86,7 @@ adminUsersRouter.post('/reset-password', async (c) => {
   }
 
   try {
+    const { hashPassword } = await import('better-auth/crypto')
     const hashedPassword = await hashPassword(password)
 
     db.update(authAccount)
