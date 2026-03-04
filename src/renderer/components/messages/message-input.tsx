@@ -3,11 +3,12 @@ import { Button } from '@renderer/components/ui/button'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSendMessage, useUploadFile, useInterruptSession } from '@renderer/hooks/use-messages'
 import { useMessageStream } from '@renderer/hooks/use-message-stream'
-import { Send, Loader2, StopCircle, Paperclip, WifiOff } from 'lucide-react'
+import { Send, Loader2, StopCircle, Paperclip, WifiOff, Mic } from 'lucide-react'
 import { useIsOnline } from '@renderer/context/connectivity-context'
 import { useUser } from '@renderer/context/user-context'
 import { AttachmentPreview, type Attachment } from './attachment-preview'
 import { SlashCommandMenu } from './slash-command-menu'
+import { useVoiceInput } from '@renderer/hooks/use-voice-input'
 
 interface MessageInputProps {
   sessionId: string
@@ -32,6 +33,11 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
   const { isActive, slashCommands } = useMessageStream(sessionId, agentSlug)
   const isOnline = useIsOnline()
   const isOffline = !isOnline
+
+  const handleTranscript = useCallback((text: string) => {
+    setMessage(prev => prev ? `${prev} ${text}` : text)
+  }, [])
+  const { state: voiceState, toggleRecording, error: voiceError } = useVoiceInput(handleTranscript)
 
   // Extract the slash command prefix being typed (e.g. "co" from "/co")
   const slashFilter = useMemo(() => {
@@ -245,7 +251,7 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
   return (
     <form
       onSubmit={handleSubmit}
-      className={`relative px-4 py-[18px] border-t bg-background ${isDragOver ? 'ring-2 ring-primary ring-inset' : ''}`}
+      className={`relative p-4 border-t bg-background ${isDragOver ? 'ring-2 ring-primary ring-inset' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -276,6 +282,26 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
           title="Attach file"
         >
           <Paperclip className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="icon"
+          variant={voiceState === 'recording' ? 'destructive' : 'ghost'}
+          className={`h-[34px] w-[34px] ${voiceState === 'recording' ? 'animate-pulse' : ''}`}
+          onClick={toggleRecording}
+          disabled={isDisabled || voiceState === 'loading' || voiceState === 'transcribing'}
+          title={
+            voiceState === 'recording' ? 'Stop recording'
+              : voiceState === 'loading' ? 'Loading speech model...'
+              : voiceState === 'transcribing' ? 'Transcribing...'
+              : 'Voice input'
+          }
+        >
+          {voiceState === 'loading' || voiceState === 'transcribing' ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Mic className="h-4 w-4" />
+          )}
         </Button>
         <textarea
           ref={textareaRef}
@@ -332,6 +358,12 @@ export function MessageInput({ sessionId, agentSlug, onMessageSent }: MessageInp
         <div className="flex items-center gap-1.5 mt-2 text-xs text-destructive">
           <WifiOff className="h-3 w-3 shrink-0" />
           <span>No internet connection. Messages cannot be sent.</span>
+        </div>
+      )}
+      {voiceError && (
+        <div className="flex items-center gap-1.5 mt-2 text-xs text-destructive">
+          <Mic className="h-3 w-3 shrink-0" />
+          <span>{voiceError}</span>
         </div>
       )}
     </form>
