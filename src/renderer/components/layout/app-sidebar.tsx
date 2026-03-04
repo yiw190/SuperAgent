@@ -125,10 +125,10 @@ function ScheduledTaskSubItem({
       >
         <button
           onClick={handleClick}
-          className={`flex items-center gap-2 w-full text-muted-foreground ${isDone ? 'opacity-40 line-through' : 'opacity-70'}`}
+          className={`flex items-center gap-2 w-full text-muted-foreground ${isDone ? 'opacity-40' : 'opacity-70'}`}
         >
           {task.isRecurring ? <Clock className="h-3 w-3 shrink-0" /> : <Timer className="h-3 w-3 shrink-0" />}
-          <span className="truncate">{task.name || 'Scheduled Task'}</span>
+          <span className={`truncate ${isDone ? 'line-through decoration-current' : ''}`}>{task.name || 'Scheduled Task'}</span>
         </button>
       </SidebarMenuSubButton>
     </SidebarMenuSubItem>
