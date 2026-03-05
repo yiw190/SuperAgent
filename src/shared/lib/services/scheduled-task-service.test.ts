@@ -32,6 +32,8 @@ import {
   listPendingScheduledTasks,
   getDueTasks,
   cancelScheduledTask,
+  pauseScheduledTask,
+  resumeScheduledTask,
   markTaskExecuted,
   updateNextExecution,
   markTaskFailed,
@@ -244,6 +246,23 @@ describe('scheduled-task-service', () => {
       expect(dueTasks).toHaveLength(0)
     })
 
+    it('does not return paused tasks', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 30 minutes',
+        prompt: 'Paused task',
+      })
+
+      await pauseScheduledTask(taskId)
+
+      // Advance time
+      vi.setSystemTime(new Date('2024-06-15T13:00:00.000Z'))
+
+      const dueTasks = await getDueTasks()
+      expect(dueTasks).toHaveLength(0)
+    })
+
     it('does not return executed tasks', async () => {
       const taskId = await createScheduledTask({
         agentSlug: 'test-agent',
@@ -301,6 +320,135 @@ describe('scheduled-task-service', () => {
 
     it('returns false for nonexistent tasks', async () => {
       const result = await cancelScheduledTask('nonexistent-id')
+      expect(result).toBe(false)
+    })
+  })
+
+  // ============================================================================
+  // pauseScheduledTask Tests
+  // ============================================================================
+
+  describe('pauseScheduledTask', () => {
+    it('sets status to paused', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 1 hour',
+        prompt: 'Test',
+      })
+
+      const result = await pauseScheduledTask(taskId)
+      expect(result).toBe(true)
+
+      const task = await getScheduledTask(taskId)
+      expect(task!.status).toBe('paused')
+    })
+
+    it('returns false for already paused tasks', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 1 hour',
+        prompt: 'Test',
+      })
+
+      await pauseScheduledTask(taskId)
+      const result = await pauseScheduledTask(taskId)
+      expect(result).toBe(false)
+    })
+
+    it('returns false for cancelled tasks', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 1 hour',
+        prompt: 'Test',
+      })
+
+      await cancelScheduledTask(taskId)
+      const result = await pauseScheduledTask(taskId)
+      expect(result).toBe(false)
+    })
+
+    it('returns false for nonexistent tasks', async () => {
+      const result = await pauseScheduledTask('nonexistent-id')
+      expect(result).toBe(false)
+    })
+  })
+
+  // ============================================================================
+  // resumeScheduledTask Tests
+  // ============================================================================
+
+  describe('resumeScheduledTask', () => {
+    it('sets status back to pending', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 1 hour',
+        prompt: 'Test',
+      })
+
+      await pauseScheduledTask(taskId)
+      const result = await resumeScheduledTask(taskId)
+      expect(result).toBe(true)
+
+      const task = await getScheduledTask(taskId)
+      expect(task!.status).toBe('pending')
+    })
+
+    it('keeps the original nextExecutionAt if it has not passed', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 2 hours',
+        prompt: 'Test',
+      })
+
+      const original = await getScheduledTask(taskId)
+      await pauseScheduledTask(taskId)
+
+      // Advance time but not past the execution time
+      vi.setSystemTime(new Date('2024-06-15T13:00:00.000Z'))
+
+      await resumeScheduledTask(taskId)
+      const resumed = await getScheduledTask(taskId)
+      expect(resumed!.nextExecutionAt.getTime()).toBe(original!.nextExecutionAt.getTime())
+    })
+
+    it('recalculates nextExecutionAt for cron tasks if time has passed', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'cron',
+        scheduleExpression: '0 * * * *',
+        prompt: 'Test',
+      })
+
+      const original = await getScheduledTask(taskId)
+      await pauseScheduledTask(taskId)
+
+      // Advance time past the original execution time
+      vi.setSystemTime(new Date('2024-06-15T14:30:00.000Z'))
+
+      await resumeScheduledTask(taskId)
+      const resumed = await getScheduledTask(taskId)
+      expect(resumed!.nextExecutionAt.getTime()).toBeGreaterThan(original!.nextExecutionAt.getTime())
+    })
+
+    it('returns false for pending tasks', async () => {
+      const taskId = await createScheduledTask({
+        agentSlug: 'test-agent',
+        scheduleType: 'at',
+        scheduleExpression: 'at now + 1 hour',
+        prompt: 'Test',
+      })
+
+      const result = await resumeScheduledTask(taskId)
+      expect(result).toBe(false)
+    })
+
+    it('returns false for nonexistent tasks', async () => {
+      const result = await resumeScheduledTask('nonexistent-id')
       expect(result).toBe(false)
     })
   })

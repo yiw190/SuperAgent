@@ -1,6 +1,8 @@
 import type { ContainerClient, StreamMessage, SlashCommandInfo } from './types'
 import type { SessionUsage } from '@shared/lib/types/agent'
-import { createScheduledTask } from '@shared/lib/services/scheduled-task-service'
+import {
+  createScheduledTask,
+} from '@shared/lib/services/scheduled-task-service'
 import { updateSessionMetadata } from '@shared/lib/services/session-service'
 import { notificationManager } from '@shared/lib/notifications/notification-manager'
 import { getAgentSessionsDir } from '@shared/lib/utils/file-storage'
@@ -810,6 +812,10 @@ class MessagePersister {
             )
           }
 
+          if (state.currentToolUse.name === 'mcp__user-input__manage_scheduled_tasks') {
+            this.handleManageScheduledTasksTool(state.currentToolInput, state.agentSlug)
+          }
+
           // Check if this is an AskUserQuestion tool
           if (state.currentToolUse.name === 'AskUserQuestion') {
             this.handleAskUserQuestionTool(
@@ -1013,6 +1019,32 @@ class MessagePersister {
         console.error('[MessagePersister] Error handling schedule task:', error)
       }
     })()
+  }
+
+  /**
+   * The tool calls the host API directly for DB operations.
+   * Here we only broadcast a global SSE event so the frontend UI refreshes.
+   */
+  private handleManageScheduledTasksTool(toolInput: string, agentSlug?: string): void {
+    if (!agentSlug) return
+
+    let input: { action: string; taskId?: string }
+    try {
+      input = JSON.parse(toolInput)
+    } catch {
+      return
+    }
+
+    if (input.action === 'list') return
+
+    // Delay so the tool's API call completes before frontend refetches
+    setTimeout(() => {
+      this.broadcastGlobal({
+        type: 'scheduled_task_updated',
+        taskId: input.taskId,
+        agentSlug,
+      })
+    }, 1000)
   }
 
   // Handle AskUserQuestion tool - broadcast to SSE clients so they can show the UI
