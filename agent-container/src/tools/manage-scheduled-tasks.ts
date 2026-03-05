@@ -1,9 +1,16 @@
 /**
  * Manage Scheduled Tasks Tool
  *
- * Allows agents to list, pause, resume, and cancel their own scheduled tasks
- * by calling the host app API. The message-persister also intercepts this tool
- * call to broadcast SSE events for frontend UI refresh.
+ * Allows agents to list, pause, resume, and cancel their own scheduled tasks.
+ *
+ * - list: reads from host app API (needs HOST_APP_URL + PROXY_TOKEN).
+ * - pause/resume/cancel: pure validation only — the actual DB mutation is
+ *   performed by the host-side message-persister which intercepts the tool
+ *   call, matching the same pattern used by schedule_task.
+ *
+ * TODO: "list" still requires HTTP access to the host app, which exposes
+ * HOST_APP_URL to the container. Safe in local/Electron mode, but should
+ * be revisited for remote/shared container execution.
  */
 
 import { tool } from '@anthropic-ai/claude-agent-sdk'
@@ -48,10 +55,13 @@ Use "list" first to see available tasks and their IDs before performing other ac
     const agentId = process.env.AGENT_ID
     if (!agentId) return fail('AGENT_ID not configured.')
 
-    try {
-      if (args.action === 'list') {
+    if (args.action === 'list') {
+      try {
         const res = await hostFetch(`/api/agents/${agentId}/scheduled-tasks?status=active`)
-        if (!res.ok) return fail(`Failed to list tasks: ${res.statusText}`)
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          return fail(`Failed to list tasks: ${body || res.statusText}`)
+        }
 
         interface TaskSummary {
           id: string; name: string; scheduleType: string
@@ -67,24 +77,15 @@ Use "list" first to see available tasks and their IDs before performing other ac
           (t.nextExecutionAt ? ` next=${t.nextExecutionAt}` : '')
         )
         return text(lines.join('\n'))
+      } catch (err) {
+        return fail(`Error: ${err instanceof Error ? err.message : err}`)
       }
-
-      let method: string
-      let path: string
-      switch (args.action) {
-        case 'pause':
-          method = 'POST'; path = `/api/scheduled-tasks/${args.taskId}/pause`; break
-        case 'resume':
-          method = 'POST'; path = `/api/scheduled-tasks/${args.taskId}/resume`; break
-        case 'cancel':
-          method = 'DELETE'; path = `/api/scheduled-tasks/${args.taskId}`; break
-      }
-
-      const res = await hostFetch(path, method)
-      if (!res.ok) return fail(`Failed to ${args.action} task: ${res.statusText}`)
-      return text(`Successfully ${args.action}d task ${args.taskId}.`)
-    } catch (err) {
-      return fail(`Error: ${err instanceof Error ? err.message : err}`)
     }
+
+    // pause/resume/cancel — return confirmation text only.
+    // The host-side message-persister intercepts this tool call and performs
+    // the actual DB operation + SSE broadcast.
+    const pastTense = args.action === 'cancel' ? 'cancelled' : `${args.action}d`
+    return text(`Successfully ${pastTense} task ${args.taskId}.`)
   }
 )

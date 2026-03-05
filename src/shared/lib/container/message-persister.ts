@@ -2,6 +2,9 @@ import type { ContainerClient, StreamMessage, SlashCommandInfo } from './types'
 import type { SessionUsage } from '@shared/lib/types/agent'
 import {
   createScheduledTask,
+  pauseScheduledTask,
+  resumeScheduledTask,
+  cancelScheduledTask,
 } from '@shared/lib/services/scheduled-task-service'
 import { updateSessionMetadata } from '@shared/lib/services/session-service'
 import { notificationManager } from '@shared/lib/notifications/notification-manager'
@@ -24,7 +27,6 @@ interface StreamingState {
   lastContextWindow: number // Last known context window size (default 200k)
   lastAssistantUsage: SessionUsage | null // Per-call usage from most recent assistant message
   pendingTaskToolId: string | null // tool_use ID of the currently executing Task tool
-  pendingManageTasksToolIds: Map<string, { action: string; taskId?: string }> // tool_use IDs for manage_scheduled_tasks awaiting result
   activeSubagentId: string | null // agentId of the running subagent
   completedSubagentIds: Set<string> // agentIds of subagents that have completed (to avoid re-discovery)
   // Subagent streaming state (separate from main agent to avoid corruption)
@@ -69,7 +71,6 @@ class MessagePersister {
       lastContextWindow: 200_000,
       lastAssistantUsage: null,
       pendingTaskToolId: null,
-      pendingManageTasksToolIds: new Map(),
       activeSubagentId: null,
       completedSubagentIds: new Set(),
       subagentCurrentText: '',
@@ -214,7 +215,6 @@ class MessagePersister {
       state.currentToolUse = null
       state.currentToolInput = ''
       state.pendingTaskToolId = null
-      state.pendingManageTasksToolIds.clear()
       state.activeSubagentId = null
       state.subagentCurrentText = ''
       state.subagentCurrentToolUse = null
@@ -272,7 +272,6 @@ class MessagePersister {
         lastContextWindow: 200_000,
         lastAssistantUsage: null,
         pendingTaskToolId: null,
-        pendingManageTasksToolIds: new Map(),
         activeSubagentId: null,
         completedSubagentIds: new Set(),
         subagentCurrentText: '',
@@ -535,7 +534,6 @@ class MessagePersister {
     state.currentToolUse = null
     state.currentToolInput = ''
     state.pendingTaskToolId = null
-    state.pendingManageTasksToolIds.clear()
     state.activeSubagentId = null
     state.subagentCurrentText = ''
     state.subagentCurrentToolUse = null
@@ -818,7 +816,12 @@ class MessagePersister {
           }
 
           if (state.currentToolUse.name === 'mcp__user-input__manage_scheduled_tasks') {
-            this.trackManageScheduledTasksTool(state, state.currentToolInput)
+            this.handleManageScheduledTasksTool(
+              sessionId,
+              state.currentToolUse.id,
+              state.currentToolInput,
+              state.agentSlug
+            )
           }
 
           // Check if this is an AskUserQuestion tool
@@ -1027,25 +1030,68 @@ class MessagePersister {
   }
 
   /**
-   * Record pending manage_scheduled_tasks tool call so we can broadcast the
-   * SSE event once the tool_result arrives (guaranteeing the DB write is done).
+   * Handle manage_scheduled_tasks write operations (pause/resume/cancel) on the
+   * host side, matching the pattern used by handleScheduleTaskTool. The container
+   * only validates input; we execute the actual DB mutation here.
    */
-  private trackManageScheduledTasksTool(state: StreamingState, toolInput: string): void {
-    if (!state.currentToolUse) return
+  private handleManageScheduledTasksTool(
+    sessionId: string,
+    toolUseId: string,
+    toolInput: string,
+    agentSlug?: string
+  ): void {
+    ;(async () => {
+      try {
+        let input: { action: string; taskId?: string }
+        try {
+          input = JSON.parse(toolInput)
+        } catch {
+          console.error('[MessagePersister] Failed to parse manage_scheduled_tasks input:', toolInput)
+          return
+        }
 
-    let input: { action: string; taskId?: string }
-    try {
-      input = JSON.parse(toolInput)
-    } catch {
-      return
-    }
+        if (input.action === 'list') return
 
-    if (input.action === 'list') return
+        if (!input.taskId) {
+          console.error('[MessagePersister] manage_scheduled_tasks missing taskId for action:', input.action)
+          return
+        }
 
-    state.pendingManageTasksToolIds.set(state.currentToolUse.id, {
-      action: input.action,
-      taskId: input.taskId,
-    })
+        let success = false
+        switch (input.action) {
+          case 'pause':
+            success = await pauseScheduledTask(input.taskId)
+            break
+          case 'resume':
+            success = await resumeScheduledTask(input.taskId)
+            break
+          case 'cancel':
+            success = await cancelScheduledTask(input.taskId)
+            break
+        }
+
+        if (!success) {
+          console.error(`[MessagePersister] Failed to ${input.action} task ${input.taskId}`)
+        }
+
+        if (agentSlug) {
+          this.broadcastToSSE(sessionId, {
+            type: 'scheduled_task_updated',
+            toolUseId,
+            taskId: input.taskId,
+            action: input.action,
+            agentSlug,
+          })
+          this.broadcastGlobal({
+            type: 'scheduled_task_updated',
+            taskId: input.taskId,
+            agentSlug,
+          })
+        }
+      } catch (error) {
+        console.error('[MessagePersister] Error handling manage_scheduled_tasks:', error)
+      }
+    })()
   }
 
   // Handle AskUserQuestion tool - broadcast to SSE clients so they can show the UI
@@ -1255,16 +1301,6 @@ class MessagePersister {
             result: block.content,
             isError: block.is_error || false,
           })
-
-          const pending = state.pendingManageTasksToolIds.get(block.tool_use_id)
-          if (pending && state.agentSlug && !block.is_error) {
-            state.pendingManageTasksToolIds.delete(block.tool_use_id)
-            this.broadcastGlobal({
-              type: 'scheduled_task_updated',
-              taskId: pending.taskId,
-              agentSlug: state.agentSlug,
-            })
-          }
         }
       }
     } catch (error) {
