@@ -128,7 +128,18 @@ export class SessionManager extends EventEmitter {
       subscribers: new Set(),
     };
 
-    this.wireProcessEvents(sessionId, process);
+    // Set up event listeners
+    process.on('message', (message: SDKMessage) => {
+      this.handleMessage(sessionId, message);
+    });
+
+    process.on('stderr', (error: string) => {
+      console.error(`[Session ${sessionId}] stderr:`, error);
+    });
+
+    process.on('exit', (code: number | null) => {
+      console.log(`Session ${sessionId} exited with code ${code}`);
+    });
 
     // Persist the session
     this.persistence.saveSession({
@@ -164,7 +175,21 @@ export class SessionManager extends EventEmitter {
     console.log(`Attempting to resume session ${sessionId} with Claude session ID ${persisted.claudeSessionId}`);
 
     try {
-      const process = this.createProcess(sessionId, persisted);
+      // Create a new Claude Code process with resume
+      const process = new ClaudeCodeProcess({
+        sessionId,
+        workingDirectory: persisted.workingDirectory,
+        claudeSessionId: persisted.claudeSessionId,
+        userSystemPrompt: persisted.systemPrompt,
+        availableEnvVars: persisted.availableEnvVars,
+        model: persisted.model,
+        browserModel: persisted.browserModel,
+        maxOutputTokens: persisted.maxOutputTokens,
+        maxThinkingTokens: persisted.maxThinkingTokens,
+        maxTurns: persisted.maxTurns,
+        maxBudgetUsd: persisted.maxBudgetUsd,
+        customEnvVars: persisted.customEnvVars,
+      });
 
       const session: Session = {
         id: sessionId,
@@ -182,7 +207,19 @@ export class SessionManager extends EventEmitter {
         subscribers: new Set(),
       };
 
-      this.wireProcessEvents(sessionId, process);
+      // Set up event listeners (same as createSession)
+      process.on('message', (message: SDKMessage) => {
+        this.handleMessage(sessionId, message);
+      });
+
+      process.on('stderr', (error: string) => {
+        console.error(`[Session ${sessionId}] stderr:`, error);
+      });
+
+      process.on('exit', (code: number | null) => {
+        console.log(`Resumed session ${sessionId} exited with code ${code}`);
+      });
+
       this.sessions.set(sessionId, sessionData);
 
       // Start the process (which will resume the Claude session)
@@ -216,9 +253,16 @@ export class SessionManager extends EventEmitter {
     const sessionData = this.sessions.get(sessionId);
     if (!sessionData) return false;
 
+    // Stop the process
     await sessionData.process.stop();
+
+    // Clean up subscribers
     sessionData.subscribers.clear();
+
+    // Remove from map
     this.sessions.delete(sessionId);
+
+    // Remove from persistence
     this.persistence.deleteSession(sessionId);
 
     console.log(`Deleted session ${sessionId}`);
@@ -236,8 +280,39 @@ export class SessionManager extends EventEmitter {
       }
     }
 
+    // Reattach process if it was released after going idle
     if (!sessionData.process.isRunning()) {
-      await this.reattachProcess(sessionId);
+      const persisted = this.persistence.getSession(sessionId);
+      if (!persisted) throw new Error(`No persisted data for session ${sessionId}`);
+
+      const process = new ClaudeCodeProcess({
+        sessionId,
+        workingDirectory: persisted.workingDirectory,
+        claudeSessionId: persisted.claudeSessionId,
+        userSystemPrompt: persisted.systemPrompt,
+        availableEnvVars: persisted.availableEnvVars,
+        model: persisted.model,
+        browserModel: persisted.browserModel,
+        maxOutputTokens: persisted.maxOutputTokens,
+        maxThinkingTokens: persisted.maxThinkingTokens,
+        maxTurns: persisted.maxTurns,
+        maxBudgetUsd: persisted.maxBudgetUsd,
+        customEnvVars: persisted.customEnvVars,
+      });
+
+      process.on('message', (message: SDKMessage) => {
+        this.handleMessage(sessionId, message);
+      });
+      process.on('stderr', (error: string) => {
+        console.error(`[Session ${sessionId}] stderr:`, error);
+      });
+      process.on('exit', (code: number | null) => {
+        console.log(`[Session ${sessionId}] exited with code ${code}`);
+      });
+
+      sessionData.process = process;
+      await process.start();
+      console.log(`[SessionManager] Session ${sessionId} process reattached`);
     }
 
     // Update last activity
@@ -301,6 +376,8 @@ export class SessionManager extends EventEmitter {
     // Update last activity
     sessionData.session.lastActivity = new Date();
 
+    // Release the process when a query completes to free SDK resources.
+    // The next sendMessage call will reattach a fresh process.
     if ((message as any).type === 'result') {
       this.releaseProcess(sessionId);
     }
@@ -351,42 +428,6 @@ export class SessionManager extends EventEmitter {
     console.log('All sessions stopped.');
   }
 
-  // ── Process lifecycle ─────────────────────────────────────────
-
-  /**
-   * Wire up event listeners from a ClaudeCodeProcess to this manager.
-   * Extracted so createSession, resumeSession, and reattachProcess
-   * all share the same wiring logic.
-   */
-  private wireProcessEvents(sessionId: string, process: ClaudeCodeProcess): void {
-    process.on('message', (message: SDKMessage) => {
-      this.handleMessage(sessionId, message);
-    });
-    process.on('stderr', (error: string) => {
-      console.error(`[Session ${sessionId}] stderr:`, error);
-    });
-    process.on('exit', (code: number | null) => {
-      console.log(`[Session ${sessionId}] exited with code ${code}`);
-    });
-  }
-
-  private createProcess(sessionId: string, persisted: ReturnType<SessionPersistence['getSession']> & {}): ClaudeCodeProcess {
-    return new ClaudeCodeProcess({
-      sessionId,
-      workingDirectory: persisted.workingDirectory,
-      claudeSessionId: persisted.claudeSessionId,
-      userSystemPrompt: persisted.systemPrompt,
-      availableEnvVars: persisted.availableEnvVars,
-      model: persisted.model,
-      browserModel: persisted.browserModel,
-      maxOutputTokens: persisted.maxOutputTokens,
-      maxThinkingTokens: persisted.maxThinkingTokens,
-      maxTurns: persisted.maxTurns,
-      maxBudgetUsd: persisted.maxBudgetUsd,
-      customEnvVars: persisted.customEnvVars,
-    });
-  }
-
   /**
    * Stop the process to free SDK resources (MessageQueue, API connection)
    * while keeping session data and WebSocket subscribers intact.
@@ -402,25 +443,5 @@ export class SessionManager extends EventEmitter {
     } catch (e) {
       console.error(`[SessionManager] Error releasing session ${sessionId}:`, e);
     }
-  }
-
-  /**
-   * Replace a stopped process on an existing SessionData with a fresh
-   * one. Subscribers and session metadata are preserved — only the
-   * underlying ClaudeCodeProcess is swapped out.
-   */
-  private async reattachProcess(sessionId: string): Promise<void> {
-    const sessionData = this.sessions.get(sessionId);
-    if (!sessionData) return;
-
-    const persisted = this.persistence.getSession(sessionId);
-    if (!persisted) throw new Error(`No persisted data for session ${sessionId}`);
-
-    const process = this.createProcess(sessionId, persisted);
-    this.wireProcessEvents(sessionId, process);
-    sessionData.process = process;
-    await process.start();
-
-    console.log(`[SessionManager] Session ${sessionId} process reattached`);
   }
 }
