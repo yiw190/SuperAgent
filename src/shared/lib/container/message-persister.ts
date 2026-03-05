@@ -1,6 +1,13 @@
 import type { ContainerClient, StreamMessage, SlashCommandInfo } from './types'
 import type { SessionUsage } from '@shared/lib/types/agent'
-import { createScheduledTask } from '@shared/lib/services/scheduled-task-service'
+import {
+  createScheduledTask,
+  listActiveScheduledTasks,
+  pauseScheduledTask,
+  resumeScheduledTask,
+  cancelScheduledTask,
+  getScheduledTask,
+} from '@shared/lib/services/scheduled-task-service'
 import { updateSessionMetadata } from '@shared/lib/services/session-service'
 import { notificationManager } from '@shared/lib/notifications/notification-manager'
 import { getAgentSessionsDir } from '@shared/lib/utils/file-storage'
@@ -810,6 +817,15 @@ class MessagePersister {
             )
           }
 
+          if (state.currentToolUse.name === 'mcp__user-input__manage_scheduled_tasks') {
+            this.handleManageScheduledTasksTool(
+              sessionId,
+              state.currentToolUse.id,
+              state.currentToolInput,
+              state.agentSlug
+            )
+          }
+
           // Check if this is an AskUserQuestion tool
           if (state.currentToolUse.name === 'AskUserQuestion') {
             this.handleAskUserQuestionTool(
@@ -1011,6 +1027,92 @@ class MessagePersister {
         })
       } catch (error) {
         console.error('[MessagePersister] Error handling schedule task:', error)
+      }
+    })()
+  }
+
+  private handleManageScheduledTasksTool(
+    sessionId: string,
+    toolUseId: string,
+    toolInput: string,
+    agentSlug?: string
+  ): void {
+    ;(async () => {
+      try {
+        let input: { action: string; taskId?: string }
+        try {
+          input = JSON.parse(toolInput)
+        } catch {
+          console.error('[MessagePersister] Failed to parse manage_scheduled_tasks input:', toolInput)
+          return
+        }
+
+        const { action, taskId } = input
+
+        if (action === 'list') {
+          if (!agentSlug) {
+            console.error('[MessagePersister] manage_scheduled_tasks list missing agentSlug')
+            return
+          }
+          const tasks = await listActiveScheduledTasks(agentSlug)
+          this.broadcastToSSE(sessionId, {
+            type: 'scheduled_tasks_list',
+            toolUseId,
+            tasks: tasks.map(t => ({
+              id: t.id,
+              name: t.name,
+              scheduleType: t.scheduleType,
+              scheduleExpression: t.scheduleExpression,
+              status: t.status,
+              nextExecutionAt: t.nextExecutionAt?.toISOString() ?? null,
+            })),
+          })
+          return
+        }
+
+        if (!taskId) {
+          console.error(`[MessagePersister] manage_scheduled_tasks ${action} missing taskId`)
+          return
+        }
+
+        let success = false
+        switch (action) {
+          case 'pause':
+            success = await pauseScheduledTask(taskId)
+            break
+          case 'resume':
+            success = await resumeScheduledTask(taskId)
+            break
+          case 'cancel':
+            success = await cancelScheduledTask(taskId)
+            break
+          default:
+            console.error(`[MessagePersister] Unknown manage_scheduled_tasks action: ${action}`)
+            return
+        }
+
+        if (success) {
+          const updated = await getScheduledTask(taskId)
+          this.broadcastToSSE(sessionId, {
+            type: 'scheduled_task_updated',
+            toolUseId,
+            taskId,
+            action,
+            task: updated ? {
+              id: updated.id,
+              name: updated.name,
+              status: updated.status,
+              nextExecutionAt: updated.nextExecutionAt?.toISOString() ?? null,
+            } : null,
+          })
+          this.broadcastGlobal({
+            type: 'scheduled_task_updated',
+            taskId,
+            agentSlug,
+          })
+        }
+      } catch (error) {
+        console.error('[MessagePersister] Error handling manage_scheduled_tasks:', error)
       }
     })()
   }
