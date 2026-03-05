@@ -1,13 +1,21 @@
 /**
  * Manage Scheduled Tasks Tool
  *
- * Allows agents to list, pause, resume, and cancel their own scheduled tasks.
- * Like schedule_task, this tool only validates input — the actual DB operations
- * are handled by the API server's message-persister which intercepts the tool call.
+ * Allows agents to list, pause, resume, and cancel their own scheduled tasks
+ * by calling the host app API. The message-persister also intercepts this tool
+ * call to broadcast SSE events for frontend UI refresh.
  */
 
 import { tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
+
+function hostFetch(path: string, method = 'GET'): Promise<Response> {
+  const base = process.env.HOST_APP_URL
+  if (!base) throw new Error('HOST_APP_URL not configured')
+  const headers: Record<string, string> = {}
+  if (process.env.PROXY_TOKEN) headers['Authorization'] = `Bearer ${process.env.PROXY_TOKEN}`
+  return fetch(`${base}${path}`, { method, headers })
+}
 
 export const manageScheduledTasksTool = tool(
   'manage_scheduled_tasks',
@@ -32,25 +40,33 @@ Use "list" first to see available tasks and their IDs before performing other ac
   async (args) => {
     if (args.action !== 'list' && !args.taskId) {
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `Action "${args.action}" requires a taskId. Use action "list" first to see available tasks and their IDs.`,
-          },
-        ],
+        content: [{ type: 'text' as const, text: `Action "${args.action}" requires a taskId. Use "list" first.` }],
         isError: true,
       }
     }
 
-    console.log(`[manage_scheduled_tasks] ${args.action}${args.taskId ? ` task ${args.taskId}` : ''}`)
+    const agentId = process.env.AGENT_ID
+    if (!agentId) {
+      return { content: [{ type: 'text' as const, text: 'AGENT_ID not configured.' }], isError: true }
+    }
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Task management action "${args.action}" is being processed.${args.taskId ? ` Task ID: ${args.taskId}` : ''}`,
-        },
-      ],
+    try {
+      if (args.action === 'list') {
+        const res = await hostFetch(`/api/agents/${agentId}/scheduled-tasks?status=active`)
+        if (!res.ok) return { content: [{ type: 'text' as const, text: `Failed to list tasks: ${res.statusText}` }], isError: true }
+        const tasks = await res.json() as Array<{ id: string; name: string; scheduleType: string; scheduleExpression: string; status: string; executionCount: number; nextExecutionAt: string | null }>
+        if (tasks.length === 0) return { content: [{ type: 'text' as const, text: 'No active scheduled tasks.' }] }
+        const lines = tasks.map(t => `- ${t.name} (ID: ${t.id}) [${t.status}] ${t.scheduleType}="${t.scheduleExpression}" executions=${t.executionCount}${t.nextExecutionAt ? ` next=${t.nextExecutionAt}` : ''}`)
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] }
+      }
+
+      const actionMap = { pause: ['POST', `/api/scheduled-tasks/${args.taskId}/pause`], resume: ['POST', `/api/scheduled-tasks/${args.taskId}/resume`], cancel: ['DELETE', `/api/scheduled-tasks/${args.taskId}`] } as const
+      const [method, path] = actionMap[args.action as keyof typeof actionMap]
+      const res = await hostFetch(path, method)
+      if (!res.ok) return { content: [{ type: 'text' as const, text: `Failed to ${args.action} task: ${res.statusText}` }], isError: true }
+      return { content: [{ type: 'text' as const, text: `Successfully ${args.action}d task ${args.taskId}.` }] }
+    } catch (err) {
+      return { content: [{ type: 'text' as const, text: `Error: ${err instanceof Error ? err.message : err}` }], isError: true }
     }
   }
 )
